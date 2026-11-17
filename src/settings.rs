@@ -1,5 +1,6 @@
 //! User preferences, stored as one readable JSON file.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,8 @@ pub enum ThemeChoice {
     Light,
     #[default]
     System,
+    #[serde(rename = "spotifast_modern", alias = "modern")]
+    SpotifastModern,
 }
 
 /// How the tray icon is drawn on Linux and Windows: in colour, or white or
@@ -72,11 +75,179 @@ impl Default for HomeShelfSettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BentoWidgetMode {
+    #[default]
+    PeakAndFriends,
+    Pulse,
+    CurrentArtist,
+    ExtraQuickAccess,
+}
+
+impl BentoWidgetMode {
+    pub const ALL: [Self; 4] = [
+        Self::PeakAndFriends,
+        Self::Pulse,
+        Self::CurrentArtist,
+        Self::ExtraQuickAccess,
+    ];
+
+    pub fn index(self) -> usize {
+        match self {
+            Self::PeakAndFriends => 0,
+            Self::Pulse => 1,
+            Self::CurrentArtist => 2,
+            Self::ExtraQuickAccess => 3,
+        }
+    }
+
+    pub fn title(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::PeakAndFriends => gettext(locale, "Top songs & Friends"),
+            Self::Pulse => gettext(locale, "Spotifast pulse"),
+            Self::CurrentArtist => gettext(locale, "More from artist"),
+            Self::ExtraQuickAccess => gettext(locale, "More quick access"),
+        }
+    }
+}
+
+/// Secondary stat window shown on the Spotifast Pulse Bento card.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PulseRange {
+    #[default]
+    ThisWeek,
+    AllTime,
+}
+
+impl PulseRange {
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::ThisWeek => Self::AllTime,
+            Self::AllTime => Self::ThisWeek,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeShelfId {
+    MadeForYou,
+    TopMixes,
+    NewReleases,
+    RecentlyPlayed,
+    Podcasts,
+    TopArtists,
+    TopSongs,
+    Recommendations,
+}
+
+impl HomeShelfId {
+    pub const ALL: [Self; 8] = [
+        Self::MadeForYou,
+        Self::TopMixes,
+        Self::NewReleases,
+        Self::RecentlyPlayed,
+        Self::Podcasts,
+        Self::TopArtists,
+        Self::TopSongs,
+        Self::Recommendations,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::MadeForYou => "made_for_you",
+            Self::TopMixes => "top_mixes",
+            Self::NewReleases => "new_releases",
+            Self::RecentlyPlayed => "recently_played",
+            Self::Podcasts => "podcasts",
+            Self::TopArtists => "top_artists",
+            Self::TopSongs => "top_songs",
+            Self::Recommendations => "recommendations",
+        }
+    }
+}
+
+/// Ensures `order` contains each home shelf exactly once, appending any missing
+/// shelves in default order so upgrades never lose sections.
+pub fn normalized_shelf_order(order: &[HomeShelfId]) -> Vec<HomeShelfId> {
+    let mut normalized = Vec::with_capacity(HomeShelfId::ALL.len());
+    for &id in order {
+        if !normalized.contains(&id) {
+            normalized.push(id);
+        }
+    }
+    for id in HomeShelfId::ALL {
+        if !normalized.contains(&id) {
+            normalized.push(id);
+        }
+    }
+    normalized
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaylistSnapshot {
+    pub snapshot_id: String,
+    pub tracks_total: u32,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WhatsNewEventKind {
+    FollowersGained {
+        delta: u64,
+        total: u64,
+    },
+    PlaylistUpdated {
+        playlist_id: String,
+        playlist_name: String,
+        image_url: Option<String>,
+        delta_tracks: i32,
+        total_tracks: u32,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WhatsNewEvent {
+    pub id: String,
+    pub timestamp: String,
+    #[serde(flatten)]
+    pub kind: WhatsNewEventKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HomeSettings {
     pub made_for_you: HomeShelfSettings,
     pub recommendations: HomeShelfSettings,
+    pub bento_widget: BentoWidgetMode,
+    pub pulse_range: PulseRange,
+    pub shelf_order: Vec<HomeShelfId>,
+    pub layout_locked: bool,
+    pub whats_new_seen_at: Option<String>,
+    pub known_followers: Option<u64>,
+    pub playlist_snapshots: BTreeMap<String, PlaylistSnapshot>,
+    pub whats_new_events: Vec<WhatsNewEvent>,
+}
+
+impl Default for HomeSettings {
+    fn default() -> Self {
+        Self {
+            made_for_you: HomeShelfSettings::default(),
+            recommendations: HomeShelfSettings::default(),
+            bento_widget: BentoWidgetMode::default(),
+            pulse_range: PulseRange::default(),
+            shelf_order: HomeShelfId::ALL.to_vec(),
+            layout_locked: true,
+            whats_new_seen_at: None,
+            known_followers: None,
+            playlist_snapshots: BTreeMap::new(),
+            whats_new_events: Vec::new(),
+        }
+    }
 }
 
 /// What moves behind the player bar's controls.
@@ -98,6 +269,128 @@ impl PlayerBarVis {
             Self::Spectrum => Self::Waveform,
             Self::Waveform => Self::Off,
         }
+    }
+}
+
+/// Width state of the left navigation & Library sidebar (`Expanded -> Rail -> Hidden`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarMode {
+    #[default]
+    Expanded,
+    Rail,
+    Hidden,
+}
+
+impl SidebarMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Expanded => Self::Rail,
+            Self::Rail => Self::Hidden,
+            Self::Hidden => Self::Expanded,
+        }
+    }
+}
+
+/// Visual geometry of the bottom now-playing bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlayerBarStyle {
+    #[default]
+    Pill,
+    Wide,
+    Classic,
+}
+
+impl PlayerBarStyle {
+    pub const ALL: [Self; 3] = [Self::Pill, Self::Wide, Self::Classic];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::pgettext;
+        match self {
+            Self::Pill => pgettext(locale, "player bar", "Pill"),
+            Self::Wide => pgettext(locale, "player bar", "Wide"),
+            Self::Classic => pgettext(locale, "player bar", "Classic"),
+        }
+    }
+}
+
+/// Strength of album-cover colour tinting across surfaces and chrome (`0..=100`%).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TintIntensity(u8);
+
+impl TintIntensity {
+    pub const VIVID: Self = Self(80);
+    pub const BALANCED: Self = Self(40);
+
+    pub const fn from_percent(percent: u8) -> Self {
+        Self(if percent > 100 { 100 } else { percent })
+    }
+
+    pub const fn percent(self) -> u8 {
+        self.0
+    }
+
+    pub fn fraction(self) -> f32 {
+        f32::from(self.0) / 100.0
+    }
+}
+
+impl Default for TintIntensity {
+    fn default() -> Self {
+        Self::VIVID
+    }
+}
+
+impl Serialize for TintIntensity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for TintIntensity {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = TintIntensity;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a percentage between 0 and 100, or 'vivid'/'balanced'")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(TintIntensity::from_percent(value.min(100) as u8))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(TintIntensity::from_percent(value.clamp(0, 100) as u8))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                if !value.is_finite() {
+                    return Ok(TintIntensity::default());
+                }
+                Ok(TintIntensity::from_percent(
+                    value.round().clamp(0.0, 100.0) as u8,
+                ))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                let trimmed = value.trim().trim_end_matches('%').trim();
+                if trimmed.eq_ignore_ascii_case("vivid") {
+                    Ok(TintIntensity::VIVID)
+                } else if trimmed.eq_ignore_ascii_case("balanced") {
+                    Ok(TintIntensity::BALANCED)
+                } else if let Ok(pct) = trimmed.parse::<u8>() {
+                    Ok(TintIntensity::from_percent(pct))
+                } else {
+                    Ok(TintIntensity::default())
+                }
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
     }
 }
 
@@ -164,7 +457,12 @@ impl<'de> Deserialize<'de> for LanguageChoice {
 }
 
 impl ThemeChoice {
-    pub const ALL: [ThemeChoice; 3] = [Self::System, Self::Light, Self::Dark];
+    pub const ALL: [ThemeChoice; 4] = [
+        Self::System,
+        Self::Light,
+        Self::Dark,
+        Self::SpotifastModern,
+    ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
         use crate::i18n::{gettext, pgettext};
@@ -172,6 +470,7 @@ impl ThemeChoice {
             Self::Dark => pgettext(locale, "theme", "Dark"),
             Self::Light => pgettext(locale, "theme", "Light"),
             Self::System => gettext(locale, "Follow system"),
+            Self::SpotifastModern => "Spotifast Modern".into(),
         }
     }
 }
@@ -315,6 +614,10 @@ pub struct Settings {
     pub home: HomeSettings,
     /// Tint the interface with the colour of the playing album's art.
     pub accent_from_art: bool,
+    /// How strongly the playing album's colour tints surfaces and chrome.
+    pub tint_intensity: TintIntensity,
+    /// Visual shape of the bottom player bar.
+    pub player_bar_style: PlayerBarStyle,
     /// A spectrum or waveform of the playing song behind the player bar.
     pub player_bar_vis: PlayerBarVis,
     /// Allow clicks on the player bar background to cycle visualizer modes.
@@ -324,8 +627,11 @@ pub struct Settings {
     pub visualizer_fps: u32,
     /// Last local volume, 0..=65535.
     pub volume: u16,
-    /// Whether the library sidebar is visible.
+    /// Whether the library sidebar is visible. Kept in sync with `sidebar_mode`
+    /// for older config files and visibility shortcuts.
     pub sidebar_visible: bool,
+    /// 3-stage sidebar mode: Expanded <-> Rail <-> Hidden.
+    pub sidebar_mode: SidebarMode,
     /// The playing album's art docked large at the sidebar's bottom.
     pub art_expanded: bool,
     /// Use compact single-line rows without cover art in the sidebar.
@@ -341,6 +647,8 @@ pub struct Settings {
     /// Linux desktops usually paste the primary selection on middle click.
     /// Windows always autoscrolls and macOS never does.
     pub middle_click_autoscroll: bool,
+    /// Navigate Back / Forward with a two-finger horizontal touchpad swipe.
+    pub touchpad_navigation: bool,
     pub search_history: Vec<String>,
     pub show_shortcut_hints: bool,
     /// An optional personal Spotify Web API application id. The shared
@@ -511,11 +819,14 @@ impl Default for Settings {
             theme_pair: crate::theme::ThemePair::default(),
             home: HomeSettings::default(),
             accent_from_art: true,
+            tint_intensity: TintIntensity::default(),
+            player_bar_style: PlayerBarStyle::default(),
             player_bar_vis: PlayerBarVis::Off,
             player_bar_vis_click: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
             volume: (u16::MAX as u32 * 70 / 100) as u16,
             sidebar_visible: true,
+            sidebar_mode: SidebarMode::default(),
             art_expanded: false,
             sidebar_compact: false,
             sidebar_grid: false,
@@ -524,6 +835,7 @@ impl Default for Settings {
             queue_width: 360.0,
             tracklist_compact: false,
             middle_click_autoscroll: false,
+            touchpad_navigation: true,
             search_history: Vec::new(),
             show_shortcut_hints: true,
             web_client_id: None,
@@ -676,6 +988,26 @@ impl Settings {
             pins.insert(0, LIKED_SONGS_KEY.into());
         }
         pins
+    }
+
+    pub fn effective_sidebar_mode(&self) -> SidebarMode {
+        if !self.sidebar_visible {
+            SidebarMode::Hidden
+        } else if self.sidebar_mode == SidebarMode::Hidden {
+            SidebarMode::Expanded
+        } else {
+            self.sidebar_mode
+        }
+    }
+
+    pub fn set_sidebar_mode(&mut self, mode: SidebarMode) {
+        self.sidebar_mode = mode;
+        self.sidebar_visible = mode != SidebarMode::Hidden;
+    }
+
+    pub fn cycle_sidebar_mode(&mut self) {
+        let next = self.effective_sidebar_mode().next();
+        self.set_sidebar_mode(next);
     }
 
     pub fn load(path: &Path) -> Self {
@@ -1026,7 +1358,11 @@ mod tests {
         assert_eq!(ThemeChoice::default(), ThemeChoice::System);
         let empty: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(empty.theme, ThemeChoice::System);
-        for (json, choice) in [("dark", ThemeChoice::Dark), ("light", ThemeChoice::Light)] {
+        for (json, choice) in [
+            ("dark", ThemeChoice::Dark),
+            ("light", ThemeChoice::Light),
+            ("spotifast_modern", ThemeChoice::SpotifastModern),
+        ] {
             let settings: Settings =
                 serde_json::from_value(serde_json::json!({"theme": json, "volume": 37})).unwrap();
             assert_eq!(settings.theme, choice);
@@ -1272,7 +1608,14 @@ mod tests {
         let old: Settings = serde_json::from_str(r#"{"volume":12345}"#).unwrap();
         assert!(old.home.made_for_you.visible);
         assert!(old.home.recommendations.visible);
+        assert_eq!(old.home.pulse_range, super::PulseRange::ThisWeek);
         assert_eq!(old.volume, 12345);
+        let all_time: Settings =
+            serde_json::from_str(r#"{"home":{"pulse_range":"all_time"}}"#).unwrap();
+        assert_eq!(all_time.home.pulse_range, super::PulseRange::AllTime);
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&all_time).unwrap()).unwrap();
+        assert_eq!(restored.home.pulse_range, super::PulseRange::AllTime);
     }
 
     /// Notepad and Windows PowerShell can save UTF-8 with a byte order mark.
@@ -1416,6 +1759,62 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let restored: Settings = serde_json::from_str(&json).unwrap();
         assert!(!restored.sidebar_visible);
+        assert_eq!(
+            restored.effective_sidebar_mode(),
+            super::SidebarMode::Hidden
+        );
+    }
+
+    #[test]
+    fn three_stage_sidebar_cycles_and_syncs_visibility() {
+        use super::SidebarMode;
+        let mut settings = Settings::default();
+        assert_eq!(settings.effective_sidebar_mode(), SidebarMode::Expanded);
+        settings.cycle_sidebar_mode();
+        assert_eq!(settings.effective_sidebar_mode(), SidebarMode::Rail);
+        assert!(settings.sidebar_visible);
+        settings.cycle_sidebar_mode();
+        assert_eq!(settings.effective_sidebar_mode(), SidebarMode::Hidden);
+        assert!(!settings.sidebar_visible);
+        settings.cycle_sidebar_mode();
+        assert_eq!(settings.effective_sidebar_mode(), SidebarMode::Expanded);
+        assert!(settings.sidebar_visible);
+    }
+
+    #[test]
+    fn player_bar_and_tint_defaults_and_round_trip() {
+        use super::{PlayerBarStyle, TintIntensity};
+        let older: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(older.player_bar_style, PlayerBarStyle::Pill);
+        assert_eq!(older.tint_intensity, TintIntensity::VIVID);
+        let legacy: Settings =
+            serde_json::from_str(r#"{"tint_intensity":"balanced"}"#).unwrap();
+        assert_eq!(legacy.tint_intensity, TintIntensity::BALANCED);
+        let legacy_vivid: Settings =
+            serde_json::from_str(r#"{"tint_intensity":"vivid"}"#).unwrap();
+        assert_eq!(legacy_vivid.tint_intensity, TintIntensity::VIVID);
+        let custom = Settings {
+            player_bar_style: PlayerBarStyle::Wide,
+            tint_intensity: TintIntensity::from_percent(65),
+            ..Settings::default()
+        };
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&custom).unwrap()).unwrap();
+        assert_eq!(restored.player_bar_style, PlayerBarStyle::Wide);
+        assert_eq!(restored.tint_intensity, TintIntensity::from_percent(65));
+    }
+
+    #[test]
+    fn home_shelf_order_normalizes_missing_and_duplicate_shelves() {
+        use super::{HomeShelfId, normalized_shelf_order};
+        let order = normalized_shelf_order(&[
+            HomeShelfId::TopMixes,
+            HomeShelfId::MadeForYou,
+            HomeShelfId::TopMixes,
+        ]);
+        assert_eq!(order[0], HomeShelfId::TopMixes);
+        assert_eq!(order[1], HomeShelfId::MadeForYou);
+        assert_eq!(order.len(), HomeShelfId::ALL.len());
     }
 
     #[test]

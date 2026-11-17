@@ -4257,6 +4257,217 @@ msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr ""
 "Blendet die Lautstärke am Ende eines Titels sanft aus und beim nächsten ein."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "Seitenleiste einklappen (Strg+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "Seitenleiste einklappen (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "Musik"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "Top"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "Kapsel"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "Breit"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "Klassisch"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "Kräftig"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "Live-Radio"
+
+msgid "Player bar style"
+msgstr "Stil der Wiedergabeleiste"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr ""
+"Schwebende Kapsel, abgerundete Leiste oder klassisches randloses Layout wählen."
+
+msgid "Album colour intensity"
+msgstr "Farbintensität des Albumcovers"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr ""
+"Steuert, wie stark das aktuelle Cover Flächen und Akzente einfärbt."
+
+msgid "Touchpad swipe navigation"
+msgstr "Wischgesten auf dem Touchpad"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr ""
+"Mit zwei Fingern horizontal auf dem Touchpad wischen, um vor oder zurück zu navigieren."
+
+msgid "Top songs & Friends"
+msgstr "Top-Songs & Freunde"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast-Puls"
+
+msgid "More from artist"
+msgstr "Mehr vom Künstler"
+
+msgid "More quick access"
+msgstr "Mehr Schnellzugriff"
+
+msgid "Customize home"
+msgstr "Startseite anpassen"
+
+msgid "Lock layout"
+msgstr "Layout sperren"
+
+msgid "Reset"
+msgstr "Zurücksetzen"
+
+msgid "Drag to reorder"
+msgstr "Zum Sortieren ziehen"
+
+msgid "Explicit"
+msgstr "Explizit"
+
+msgid "Today"
+msgstr "Heute"
+
+msgid "All time"
+msgstr "Gesamte Zeit"
+
+msgid "Nothing new yet"
+msgstr "Noch nichts Neues"
+
+msgid "What's New"
+msgstr "Neuheiten"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "Die neuesten Veröffentlichungen von Künstlern und Podcasts, denen du folgst."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "Neue Musik und Podcast-Folgen von Künstlern und Sendungen, denen du folgst, erscheinen hier."
+
+#, rust-format
+msgid "{time} left"
+msgstr "Noch {time}"
+
+msgid "Play all"
+msgstr "Alle abspielen"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify-Beliebtheit und Erscheinungsjahr"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "Deine Wiedergaben in Spotifast auf diesem Gerät"
+
+msgid "Activity"
+msgstr "Aktivität"
+
+msgid "All time (this device)"
+msgstr "Gesamt (dieses Gerät)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "Neue Follower (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "Wiedergaben in deinem Hörverlauf"
+
+msgid "Scroll left"
+msgstr "Nach links scrollen"
+
+msgid "Scroll right"
+msgstr "Nach rechts scrollen"
+
+msgid "Today (all songs)"
+msgstr "Heute (alle Songs)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "Follower gesamt: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "{count} neue Songs • {total} Titel"
+
+msgid "Private session enabled for 6 hours"
+msgstr "Private Sitzung für 6 Stunden aktiviert"
+
+msgid "Private session ended"
+msgstr "Private Sitzung beendet"
+
+msgid "Private session"
+msgstr "Private Sitzung"
+
+msgid "End private session"
+msgstr "Private Sitzung beenden"
+
+msgid "Profile"
+msgstr "Profil"
+
+msgid "Public playlists"
+msgstr "Öffentliche Playlists"
+
+msgid "Recently played artists"
+msgstr "Zuletzt gehörte Künstler"
+
+msgid "Recently listened"
+msgstr "Zuletzt gehört"
+
+msgid "No public playlists"
+msgstr "Keine öffentlichen Playlists"
+
+msgid "This profile has no public playlists yet."
+msgstr "Dieses Profil hat noch keine öffentlichen Playlists."
+
+msgid "You"
+msgstr "Du"
+
+#, rust-format
+msgid "{count} following"
+msgstr "{count} abonniert"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} öffentliche Playlist"
+msgstr[1] "{count} öffentliche Playlists"
+
+msgid "No activity yet"
+msgstr "Noch keine Aktivitäten"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "Neue Follower und zu deinen Playlists hinzugefügte Titel erscheinen hier."
+
+msgid "This week"
+msgstr "Diese Woche"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "Montag bis Sonntag. Klicken, um Gesamte Zeit anzuzeigen."
+
+msgid "Click to show this week."
+msgstr "Klicken, um diese Woche anzuzeigen."
+
+msgid "Last 7 days"
+msgstr "Letzte 7 Tage"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "Berechnet aus deinem Hörverhalten der letzten 7 Tage."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Einmal in Spotify koppeln"
 

@@ -1,6 +1,6 @@
 //! The words of the playing track, in a side panel that follows the song.
 
-use egui::{Align, Color32, Frame, Layout, Margin, Rect, Sense, UiBuilder, pos2, vec2};
+use egui::{Align, Color32, Frame, Layout, Rect, Sense, UiBuilder, pos2, vec2};
 
 use crate::app::App;
 use crate::i18n::{gettext, pgettext};
@@ -50,70 +50,68 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
         .default_size(app.settings.lyrics_width)
         .size_range(fit.range.clone())
         .show_separator_line(false)
-        .frame(
-            Frame::new()
-                .fill(palette.panel)
-                .inner_margin(Margin::symmetric(12, 12)),
-        );
+        .frame(super::floating_right_panel_frame(&palette));
     let response = panel.show(ui, |ui| {
-        let window_controls = super::window_controls_reservation(
-            ui.ctx(),
-            app.show_queue_panel,
-            app.show_lyrics_panel,
-            ui.available_width(),
-        );
-        ui.add_space(window_controls.lyrics_top);
-        ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            theme::text(
-                ui,
-                gettext(app.locale, "Lyrics"),
-                theme::bold(18.0),
-                palette.text,
+        super::paint_floating_right_panel(ui, &palette, |ui| {
+            let window_controls = super::window_controls_reservation(
+                ui.ctx(),
+                app.show_queue_panel,
+                app.show_lyrics_panel,
+                ui.available_width(),
             );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if theme::icon_button(
+            ui.add_space(window_controls.lyrics_top);
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                theme::text(
                     ui,
-                    Icon::X,
-                    18.0,
-                    palette.secondary,
+                    gettext(app.locale, "Lyrics"),
+                    theme::bold(18.0),
                     palette.text,
-                    &gettext(app.locale, "Close"),
-                )
-                .clicked()
-                {
-                    app.actions.push(Action::ToggleLyricsPanel);
-                }
-                if theme::icon_button(
-                    ui,
-                    Icon::Expand,
-                    18.0,
-                    palette.secondary,
-                    palette.text,
-                    &gettext(app.locale, "Full screen lyrics"),
-                )
-                .clicked()
-                {
-                    app.actions.push(Action::SetLyricsFullscreen(true));
-                }
-                let loaded = matches!(&app.lyrics, Loadable::Loaded(Some(_)));
-                if loaded
-                    && !app.lyrics_following
-                    && theme::pill_button(
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if theme::icon_button(
                         ui,
-                        &palette,
-                        &pgettext(app.locale, "lyrics", "Follow"),
-                        false,
+                        Icon::X,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        &gettext(app.locale, "Close"),
                     )
                     .clicked()
-                {
-                    app.lyrics_following = true;
-                    app.lyrics_line_shown = None;
-                }
+                    {
+                        app.actions.push(Action::ToggleLyricsPanel);
+                    }
+                    if theme::icon_button(
+                        ui,
+                        Icon::Expand,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        &gettext(app.locale, "Full screen lyrics"),
+                    )
+                    .clicked()
+                    {
+                        app.actions.push(Action::SetLyricsFullscreen(true));
+                    }
+                    let loaded = matches!(&app.lyrics, Loadable::Loaded(Some(_)));
+                    if loaded
+                        && !app.lyrics_following
+                        && theme::pill_button(
+                            ui,
+                            &palette,
+                            &pgettext(app.locale, "lyrics", "Follow"),
+                            false,
+                        )
+                        .clicked()
+                    {
+                        app.lyrics_following = true;
+                        app.lyrics_line_shown = None;
+                    }
+                });
             });
+            ui.add_space(8.0);
+            contents(app, ui);
         });
-        ui.add_space(8.0);
-        contents(app, ui);
     });
     let current_width = response.response.rect.width();
     if (app.settings.lyrics_width - current_width).abs() > 1.0

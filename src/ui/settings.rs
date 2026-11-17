@@ -188,6 +188,50 @@ fn filtered_row_sized(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn choice_buttons_row<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    needle: &str,
+    section: &str,
+    row: &RowText<'_>,
+    choices: &[(T, std::borrow::Cow<'_, str>)],
+    current: T,
+    enabled: bool,
+    mut on_pick: impl FnMut(T),
+) {
+    let choice_gap = 6.0;
+    let choices_width = choices
+        .iter()
+        .map(|(_, label)| theme::soft_button_width(ui, label))
+        .sum::<f32>()
+        + choice_gap * (choices.len().saturating_sub(1) as f32);
+    filtered_row_sized(ui, palette, needle, section, row, choices_width, |ui| {
+        ui.add_enabled_ui(enabled, |ui| {
+            let mut paint_choices =
+                |ui: &mut egui::Ui, items: &[(T, std::borrow::Cow<'_, str>)]| {
+                    for (value, label) in items {
+                        if theme::soft_button(ui, palette, None, label, *value == current).clicked()
+                            && *value != current
+                        {
+                            on_pick(*value);
+                        }
+                    }
+                };
+            if ui.available_width() >= choices_width {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = choice_gap;
+                    let rev: Vec<_> = choices.iter().rev().cloned().collect();
+                    paint_choices(ui, &rev);
+                });
+            } else {
+                ui.spacing_mut().item_spacing.y = choice_gap;
+                paint_choices(ui, choices);
+            }
+        });
+    });
+}
+
 /// Fills a settings slider's rail up to the handle with the accent. The
 /// rail keeps the theme's colours and rounding: egui carries that fill past
 /// the handle's centre by the widgets' corner radius, so a pill radius here
@@ -1258,6 +1302,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let sidebar_compact = gettext(locale, "Compact library sidebar");
     let tracklist_compact = gettext(locale, "Compact track list");
     let middle_click = gettext(locale, "Middle-click autoscroll");
+    let touchpad_nav = gettext(locale, "Touchpad swipe navigation");
     let custom_titlebar = gettext(locale, "Custom title bar");
     let show_custom_titlebar = cfg!(target_os = "linux") || app.windows_controls_visible();
     let player_bar_vis = gettext(locale, "Player bar visualizer");
@@ -1377,6 +1422,27 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ),
         pair_row(fastframe_theme::Base::Light),
         pair_row(fastframe_theme::Base::Dark),
+        RowText::new(
+            gettext(locale, "Player bar style"),
+            gettext(
+                locale,
+                "Choose a floating pill, rounded bar, or classic edge-to-edge layout.",
+            ),
+        ),
+        RowText::new(
+            gettext(locale, "Album colour intensity"),
+            gettext(
+                locale,
+                "Control how strongly the playing cover colours surfaces and accents.",
+            ),
+        ),
+        RowText::new(
+            touchpad_nav.clone(),
+            gettext(
+                locale,
+                "Swipe horizontally with two fingers on a touchpad to go back or forward.",
+            ),
+        ),
     ];
     for index in [8, 9, 10] {
         appearance_rows[index].available &= visualizers;
@@ -1714,6 +1780,78 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     },
                 );
             }
+            {
+                let labels: Vec<_> = crate::settings::PlayerBarStyle::ALL
+                    .into_iter()
+                    .map(|style| (style, style.label(locale)))
+                    .collect();
+                choice_buttons_row(
+                    ui,
+                    &palette,
+                    &needle,
+                    &appearance,
+                    &appearance_rows[13],
+                    &labels,
+                    app.settings.player_bar_style,
+                    true,
+                    |style| app.actions.push(Action::SetPlayerBarStyle(style)),
+                );
+            }
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[14],
+                |ui| {
+                    let mut percent = app.settings.tint_intensity.percent();
+                    ui.add_enabled_ui(app.settings.accent_from_art, |ui| {
+                        let response = setting_slider(
+                            ui,
+                            &palette,
+                            &mut percent,
+                            0..=100,
+                            |slider| slider.step_by(1.0),
+                            |value| {
+                                value
+                                    .speed(0.5)
+                                    .custom_formatter(|v, _| format!("{:.0}%", v.round()))
+                                    .custom_parser(|text| {
+                                        text.trim()
+                                            .trim_end_matches('%')
+                                            .trim()
+                                            .parse::<f64>()
+                                            .ok()
+                                    })
+                            },
+                        );
+                        if response.changed() {
+                            app.actions.push(Action::SetTintIntensity(
+                                crate::settings::TintIntensity::from_percent(percent),
+                            ));
+                        }
+                    });
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[15],
+                |ui| {
+                    if widgets::switch(
+                        ui,
+                        &palette,
+                        &touchpad_nav,
+                        &mut app.settings.touchpad_navigation,
+                    )
+                    .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
         });
     }
 

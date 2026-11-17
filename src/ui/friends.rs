@@ -33,48 +33,46 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
         .default_size(app.settings.queue_width)
         .size_range(fit.range.clone())
         .show_separator_line(false)
-        .frame(
-            Frame::new()
-                .fill(palette.panel)
-                .inner_margin(Margin::symmetric(12, 12)),
-        );
+        .frame(super::floating_right_panel_frame(&palette));
     let response = panel.show(ui, |ui| {
-        // The panel sits where the Queue would, under the same controls.
-        let window_controls =
-            super::window_controls_reservation(ui.ctx(), true, false, ui.available_width());
-        ui.add_space(window_controls.queue_top);
-        let mut close = false;
-        egui::Sides::new().shrink_left().show(
-            ui,
-            |ui| {
-                ui.add_space(4.0);
-                theme::text(
-                    ui,
-                    gettext(locale, "Listening activity"),
-                    theme::bold(16.0),
-                    palette.text,
-                );
-            },
-            |ui| {
-                close = theme::icon_button(
-                    ui,
-                    Icon::X,
-                    18.0,
-                    palette.secondary,
-                    palette.text,
-                    &gettext(locale, "Close"),
-                )
-                .clicked();
-            },
-        );
-        if close {
-            app.actions.push(Action::ToggleFriendsPanel);
-        }
-        ui.add_space(12.0);
-        egui::ScrollArea::vertical()
-            .id_salt("friends-panel-scroll")
-            .auto_shrink([false, false])
-            .show(ui, |ui| contents(app, ui));
+        super::paint_floating_right_panel(ui, &palette, |ui| {
+            // The panel sits where the Queue would, under the same controls.
+            let window_controls =
+                super::window_controls_reservation(ui.ctx(), true, false, ui.available_width());
+            ui.add_space(window_controls.queue_top);
+            let mut close = false;
+            egui::Sides::new().shrink_left().show(
+                ui,
+                |ui| {
+                    ui.add_space(4.0);
+                    theme::text(
+                        ui,
+                        gettext(locale, "Listening activity"),
+                        theme::bold(16.0),
+                        palette.text,
+                    );
+                },
+                |ui| {
+                    close = theme::icon_button(
+                        ui,
+                        Icon::X,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        &gettext(locale, "Close"),
+                    )
+                    .clicked();
+                },
+            );
+            if close {
+                app.actions.push(Action::ToggleFriendsPanel);
+            }
+            ui.add_space(12.0);
+            egui::ScrollArea::vertical()
+                .id_salt("friends-panel-scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| contents(app, ui));
+        });
     });
     // The Listening activity panel shares the Queue panel's width, so switching
     // between the two never moves the page.
@@ -231,7 +229,15 @@ fn row(
             egui::Sides::new().shrink_left().show(
                 ui,
                 |ui| {
-                    theme::text(ui, &friend.user_name, theme::semibold(13.5), palette.text);
+                    if let Some(id) = crate::util::uri_id(&friend.user_uri) {
+                        if theme::link(ui, &friend.user_name, theme::semibold(13.5), palette.text)
+                            .clicked()
+                        {
+                            action = Some(Action::Open(Page::UserProfile(id.to_string())));
+                        }
+                    } else {
+                        theme::text(ui, &friend.user_name, theme::semibold(13.5), palette.text);
+                    }
                 },
                 |ui| {
                     if friend.playing {

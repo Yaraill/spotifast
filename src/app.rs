@@ -339,6 +339,8 @@ impl Default for AppOptions {
 /// interval and is `None` while paused.
 struct Listening {
     uri: String,
+    sequence: Option<u64>,
+    last_position_ms: u32,
     listened: std::time::Duration,
     playing_since: Option<Instant>,
     recorded: bool,
@@ -480,6 +482,12 @@ pub struct App {
     /// OS reports network path is available.
     pub network_reachable: bool,
     pub palette: Palette,
+    /// Guards nested `begin_effective_palette` scopes so standalone test draws
+    /// and full `ui::show` passes never double-blend or leak dynamic art hues.
+    pub(crate) palette_scoped: bool,
+    /// Last resolved artwork `(tint, primary_rgb)` held across track skips while
+    /// the next cover's colour extraction is in flight so backgrounds never flash.
+    last_now_playing_art: Option<(Color32, Option<[u8; 3]>)>,
     /// The language the interface is drawn in: [`Settings::language`]
     /// resolved against the operating system's preferred languages.
     pub locale: crate::i18n::Locale,
@@ -613,11 +621,20 @@ pub struct App {
     load_generation: u64,
     pub album_pages: HashMap<String, AlbumPage>,
     pub artist_pages: HashMap<String, ArtistPage>,
+    pub user_pages: HashMap<String, UserProfilePage>,
     /// Never reset on page eviction or account reset, so old replies cannot match.
     artist_top_tracks_generation: u64,
     pub show_pages: HashMap<String, ShowPage>,
+    /// Local Private Session active until this instant (resets on quit or timeout).
+    pub private_session_until: Option<Instant>,
     /// Radio pages by the seed's URI.
     pub radio_pages: HashMap<String, RadioPage>,
+    /// Live Radio seed awaiting station resolution so Home Play queues the full mix.
+    pub(crate) pending_home_radio_play: Option<(String, Option<String>)>,
+    /// Last Live Radio seed explicitly started from the Home radio card.
+    pub(crate) active_home_radio_seed: Option<String>,
+    /// Last time What's New refreshed self follower / playlist activity baselines.
+    pub(crate) whats_new_activity_checked_at: Option<Instant>,
     /// Songs the account hid in Spotify's playlists, by playlist URI, as
     /// Spotify's apps hide them with "Hide in this playlist" (#779).
     pub hidden_songs: HashMap<String, HashSet<String>>,
@@ -1267,7 +1284,11 @@ impl App {
             .filter(|page| !matches!(page, Page::Settings | Page::Queue))
             .unwrap_or(Page::Home);
 
-        let palette = settings.fixed_palette().unwrap_or_else(Palette::dark);
+        let palette = settings.fixed_palette().unwrap_or_else(|| match settings.theme {
+            ThemeChoice::Light => Palette::light(),
+            ThemeChoice::SpotifastModern => Palette::spotifast_modern(),
+            ThemeChoice::Dark | ThemeChoice::System => Palette::dark(),
+        });
         let mut app = Self {
             custom_themes: theme::Catalog::default(),
             storage_usage: crate::storage::Usage::default(),
@@ -1317,6 +1338,7 @@ impl App {
             offline: false,
             network_reachable: true,
             palette,
+            palette_scoped: false,
             locale,
             window_level_supported: true,
             taskbar_hiding_supported: cfg!(windows),
@@ -1414,9 +1436,14 @@ impl App {
             load_generation: 0,
             album_pages: HashMap::new(),
             artist_pages: HashMap::new(),
+            user_pages: HashMap::new(),
             artist_top_tracks_generation: 0,
             show_pages: HashMap::new(),
+            private_session_until: None,
             radio_pages: HashMap::new(),
+            pending_home_radio_play: None,
+            active_home_radio_seed: None,
+            whats_new_activity_checked_at: None,
             hidden_songs: HashMap::new(),
             hidden_songs_revision: 0,
             hidden_songs_generation: 0,
@@ -1444,6 +1471,7 @@ impl App {
             accents: HashMap::new(),
             art_palettes: HashMap::new(),
             accent_pending: HashSet::new(),
+            last_now_playing_art: None,
             dialog: None,
             duplicate_prompts: Default::default(),
             cover_request: 0,
@@ -1890,6 +1918,38 @@ impl App {
 
     pub fn user_id(&self) -> Option<&str> {
         self.user.as_ref().map(|user| user.id.as_str())
+    }
+
+    pub fn is_private_session(&self) -> bool {
+        self.private_session_until
+            .is_some_and(|until| Instant::now() < until)
+    }
+
+    fn private_session_active(&mut self) -> bool {
+        let Some(until) = self.private_session_until else {
+            return false;
+        };
+        if Instant::now() < until {
+            true
+        } else {
+            self.private_session_until = None;
+            false
+        }
+    }
+
+    fn set_private_session(&mut self, active: bool) {
+        const PRIVATE_SESSION_DURATION: Duration = Duration::from_secs(6 * 3600);
+        if active {
+            self.private_session_until = Some(Instant::now() + PRIVATE_SESSION_DURATION);
+            self.listening = None;
+            self.toast(gettext(
+                self.locale,
+                "Private session enabled for 6 hours",
+            ));
+        } else {
+            self.private_session_until = None;
+            self.toast(gettext(self.locale, "Private session ended"));
+        }
     }
 
     /// The library list's entry for a playlist, when it holds one.
@@ -2751,6 +2811,90 @@ impl App {
         self.art_palettes.get(&url).map(Vec::as_slice)
     }
 
+    /// Primary RGB extracted from the active cover artwork when dynamic colour is enabled.
+    /// Falls back past achromatic dark backgrounds to the first colourful bucket in the cover.
+    pub fn now_playing_primary_rgb(&self) -> Option<[u8; 3]> {
+        let palette = self.now_playing_palette()?;
+        palette
+            .iter()
+            .copied()
+            .find(|&rgb| crate::theme::Palette::rgb_has_hue(rgb))
+            .or_else(|| palette.first().copied())
+    }
+
+    /// Active cover tint, holding the prior track's resolved tint across skips while the
+    /// next cover's extraction is pending so panels and headers never flash between tracks.
+    pub fn resolved_now_playing_tint(&self) -> Option<Color32> {
+        if !self.settings.accent_from_art {
+            return None;
+        }
+        if let Some(tint) = self.now_playing_tint() {
+            return Some(tint);
+        }
+        self.now_playing().and_then(|now| now.art_small.or(now.art_url))?;
+        self.last_now_playing_art.map(|(tint, _)| tint)
+    }
+
+    /// Active cover accent RGB, holding the prior track's resolved colour across pending skips.
+    pub fn resolved_now_playing_primary_rgb(&self) -> Option<[u8; 3]> {
+        if !self.settings.accent_from_art {
+            return None;
+        }
+        if let Some(rgb) = self.now_playing_primary_rgb() {
+            return Some(rgb);
+        }
+        self.now_playing().and_then(|now| now.art_small.or(now.art_url))?;
+        self.last_now_playing_art.and_then(|(_, rgb)| rgb)
+    }
+
+    fn sync_now_playing_art(&mut self) {
+        if !self.settings.accent_from_art {
+            self.last_now_playing_art = None;
+            return;
+        }
+        let Some(url) = self.now_playing().and_then(|now| now.art_small.or(now.art_url)) else {
+            self.last_now_playing_art = None;
+            return;
+        };
+        if let Some(tint) = self.accents.get(&url).copied() {
+            self.last_now_playing_art = Some((tint, self.now_playing_primary_rgb()));
+        } else {
+            let _ = self.tint_for(Some(&url));
+        }
+    }
+
+    /// Runtime palette enriched with the active album cover's artwork hue & intensity.
+    pub fn effective_palette(&self) -> Palette {
+        if !self.settings.accent_from_art {
+            return self.palette;
+        }
+        self.palette.with_album_art(
+            self.resolved_now_playing_primary_rgb(),
+            self.resolved_now_playing_tint(),
+            self.settings.tint_intensity,
+        )
+    }
+
+    /// Applies [`Self::effective_palette`] for the current draw pass and returns
+    /// the previous `(palette, was_scoped)` pair to restore at scope exit.
+    pub(crate) fn begin_effective_palette(&mut self, ui: &mut egui::Ui) -> (Palette, bool) {
+        let prev = (self.palette, self.palette_scoped);
+        if !self.palette_scoped {
+            self.sync_now_playing_art();
+            let base = self.palette;
+            let effective = self.effective_palette().ease_chrome(ui.ctx(), &base);
+            self.palette = effective;
+            self.palette_scoped = true;
+            theme::apply_local(ui, &effective);
+        }
+        prev
+    }
+
+    pub(crate) fn end_effective_palette(&mut self, saved: (Palette, bool)) {
+        self.palette = saved.0;
+        self.palette_scoped = saved.1;
+    }
+
     pub fn tint_for(&mut self, url: Option<&str>) -> Option<Color32> {
         let url = url?;
         if let Some(color) = self.accents.get(url) {
@@ -3087,9 +3231,24 @@ impl App {
                     palette,
                 } => {
                     self.accent_pending.remove(&url);
-                    let tint = self.palette.tint_from_art(color);
+                    let tint_rgb = palette
+                        .iter()
+                        .copied()
+                        .find(|&rgb| crate::theme::Palette::rgb_has_hue(rgb))
+                        .unwrap_or(color);
+                    let tint = self.palette.tint_from_art(tint_rgb);
                     self.art_palettes.insert(url.clone(), palette);
-                    self.accents.insert(url, tint);
+                    self.accents.insert(url.clone(), tint);
+                    if self.settings.accent_from_art
+                        && self
+                            .now_playing()
+                            .and_then(|now| now.art_small.or(now.art_url))
+                            .as_deref()
+                            == Some(url.as_str())
+                    {
+                        let primary = self.now_playing_primary_rgb();
+                        self.last_now_playing_art = Some((tint, primary));
+                    }
                 }
                 Event::ProxyRestored { config, password } => {
                     self.handle_proxy_restored(config, password)
@@ -3677,6 +3836,14 @@ impl App {
                     self.load_new_release_page(true);
                 }
             }
+            Page::WhatsNew => {
+                let needs_releases = self.home.new_releases.get().is_none()
+                    && !self.home.new_releases_loading;
+                let needs_shows = !self.library.shows.loaded_once && !self.library.shows.loading;
+                if needs_releases || needs_shows {
+                    self.ensure_loaded(Page::WhatsNew);
+                }
+            }
             Page::Search => {}
             Page::LikedSongs => {
                 if !self.liked_songs.cache_checked {
@@ -3780,6 +3947,15 @@ impl App {
                     self.ensure_loaded(Page::Show(id));
                 }
             }
+            Page::UserProfile(id) => {
+                if self
+                    .user_pages
+                    .get(&id)
+                    .is_none_or(|page| page.profile.needs_load())
+                {
+                    self.ensure_loaded(Page::UserProfile(id));
+                }
+            }
             Page::Radio(seed) => {
                 let incomplete = self
                     .radio_pages
@@ -3801,6 +3977,9 @@ impl App {
     /// Clears account data while preserving request serials that reject late answers.
     fn reset_data(&mut self) {
         self.pending_remote_volume = None;
+        self.pending_home_radio_play = None;
+        self.active_home_radio_seed = None;
+        self.whats_new_activity_checked_at = None;
         self.local_transfer_sequence = None;
         self.queue_start_pending = None;
         self.pending_album_queues.clear();
@@ -3835,11 +4014,13 @@ impl App {
                 self.home.top_tracks_generations[0] + 1,
                 self.home.top_tracks_generations[1] + 1,
                 self.home.top_tracks_generations[2] + 1,
+                self.home.top_tracks_generations[3] + 1,
             ],
             top_songs_generations: [
                 self.home.top_songs_generations[0] + 1,
                 self.home.top_songs_generations[1] + 1,
                 self.home.top_songs_generations[2] + 1,
+                self.home.top_songs_generations[3] + 1,
             ],
             made_for_you_generation: self.home.made_for_you_generation,
             new_releases_generation: self.home.new_releases_generation,
@@ -3853,6 +4034,8 @@ impl App {
         self.hidden_songs_requested = false;
         self.prerelease_request = None;
         self.artist_pages.clear();
+        self.user_pages.clear();
+        self.private_session_until = None;
         self.artist_prereleases.clear();
         self.artist_metadata_reads.clear();
         self.play_counts.clear();
@@ -3895,6 +4078,7 @@ impl App {
         self.track_used.clear();
         self.copied_songs.clear();
         self.pending_pastes.clear();
+        self.last_now_playing_art = None;
     }
 
     /// Drop table-row caches whose pages are gone, and cap what remains.
@@ -3905,7 +4089,7 @@ impl App {
                 || match page {
                     Page::Playlist(id) => self.playlist_pages.contains_key(id),
                     Page::Album(id) => self.album_pages.contains_key(id),
-                    Page::LikedSongs | Page::TopSongs | Page::NewReleases => true,
+                    Page::LikedSongs | Page::TopSongs | Page::NewReleases | Page::WhatsNew => true,
                     _ => false,
                 }
         });
@@ -3964,10 +4148,12 @@ impl App {
                 .shuffle_set_at
                 .is_none_or(|at| at.elapsed() > Duration::from_secs(5))
             && !(self.smart_wanted
-                && self
-                    .smart_source
-                    .as_ref()
-                    .is_some_and(|source| source.target == Target::Local))
+                && (self.smart_pending.is_some()
+                    || !self.smart_rows.is_empty()
+                    || self
+                        .smart_source
+                        .as_ref()
+                        .is_some_and(|source| source.target == Target::Local)))
         {
             // Accept shuffle changes made by another client.
             self.shuffle_wanted = state.shuffle;
@@ -5664,7 +5850,7 @@ impl App {
             };
         }
         match self.settings.theme {
-            ThemeChoice::Dark => egui::ThemePreference::Dark,
+            ThemeChoice::Dark | ThemeChoice::SpotifastModern => egui::ThemePreference::Dark,
             ThemeChoice::Light => egui::ThemePreference::Light,
             ThemeChoice::System => egui::ThemePreference::System,
         }
@@ -5690,7 +5876,9 @@ impl App {
         }
         let dark = ctx.theme() == egui::Theme::Dark;
         let palette = self.custom_palette(dark).unwrap_or_else(|| {
-            if dark {
+            if self.settings.theme == ThemeChoice::SpotifastModern {
+                Palette::spotifast_modern()
+            } else if dark {
                 Palette::dark()
             } else {
                 Palette::light()
@@ -5715,6 +5903,7 @@ impl App {
             self.applied_dark = Some(dark);
             self.accents.clear();
             self.accent_pending.clear();
+            self.last_now_playing_art = None;
         }
     }
 
@@ -6322,6 +6511,7 @@ impl App {
 
     /// Fills the Home shelves Spotify has not answered for yet.
     fn restore_home(&mut self, cached: HomeSnapshot) {
+        self.refresh_last_week_top_songs();
         let home = &mut self.home;
         if let Some(recent) = cached.recently_played
             && home.recently_played.get().is_none()
@@ -6483,6 +6673,28 @@ impl App {
                     self.load_new_release_page(false);
                 }
             }
+            Page::WhatsNew => {
+                if self.network_reachable {
+                    if self.home.new_releases.get().is_none() && !self.home.new_releases_loading {
+                        self.load_new_releases();
+                    }
+                    if !self.library.shows.loaded_once && !self.library.shows.loading {
+                        self.library.shows.error = None;
+                        self.load_more(Page::Podcasts);
+                    } else if self.library.shows.loaded_once && self.home.podcasts.is_empty() {
+                        self.request_home_episodes();
+                    }
+                    let due = self
+                        .whats_new_activity_checked_at
+                        .is_none_or(|at| at.elapsed() >= Duration::from_secs(60));
+                    if due {
+                        self.whats_new_activity_checked_at = Some(Instant::now());
+                        if let Some(id) = self.user_id().map(str::to_string) {
+                            self.backend.api(ApiRequest::UserProfile { id });
+                        }
+                    }
+                }
+            }
             Page::Search => {}
             Page::LikedSongs => self.ensure_liked_songs(),
             Page::Albums => {
@@ -6595,6 +6807,13 @@ impl App {
                     self.request_contains(vec![format!("spotify:show:{id}")]);
                 }
             }
+            Page::UserProfile(id) => {
+                let page = self.user_pages.entry(id.clone()).or_default();
+                if page.profile.needs_load() && self.network_reachable {
+                    page.profile = Loadable::Loading;
+                    self.backend.api(ApiRequest::UserProfile { id: id.clone() });
+                }
+            }
             Page::Radio(seed) => {
                 if self.network_reachable {
                     self.load_radio(&seed);
@@ -6622,6 +6841,245 @@ impl App {
             id: id.to_owned(),
             generation,
         });
+    }
+
+    /// Quietly fetches artist metadata (genres + top tracks) for the Home bento widget.
+    pub(crate) fn ensure_artist_preview(&mut self, id: &str) {
+        if id.is_empty() || !self.is_connected() || !self.network_reachable {
+            return;
+        }
+        let page = self.artist_pages.entry(id.to_owned()).or_default();
+        if page.artist.needs_load() {
+            page.artist = Loadable::Loading;
+            self.backend.api(ApiRequest::Artist { id: id.to_owned() });
+        } else if page.artist.get().is_some() && page.top_tracks.needs_load() {
+            self.request_artist_top_tracks(id);
+        }
+    }
+
+    /// Quietly loads friend listening activity when the Home bento widget shows it.
+    pub(crate) fn ensure_home_friends(&mut self) {
+        if !self.is_connected()
+            || !self.network_reachable
+            || (self.settings.soloist_enabled && !self.local_ready)
+        {
+            return;
+        }
+        if matches!(self.friends, Loadable::NotLoaded) {
+            self.refresh_friends();
+        }
+    }
+
+    /// Keeps hourly-changing personalized lists (such as Daylist) current while Home stays open.
+    pub(crate) fn ensure_home_daylist_fresh(&mut self) {
+        if self.is_connected()
+            && self.network_reachable
+            && !self.home.made_for_you_loading
+            && self
+                .home
+                .loaded_at
+                .is_some_and(|at| at.elapsed() >= Duration::from_secs(3600))
+        {
+            self.home.loaded_at = Some(Instant::now());
+            self.load_made_for_you(true);
+        }
+    }
+
+    /// Plays counted for `uri` across Spotifast's local history and Spotify's merged recent plays.
+    pub(crate) fn track_play_count(&self, uri: &str) -> usize {
+        if uri.is_empty() {
+            return 0;
+        }
+        let merged = self
+            .recents_view
+            .iter()
+            .filter(|play| play.track.uri == uri)
+            .count();
+        merged.max(self.plays.play_count(uri))
+    }
+
+    fn pick_play_stats(local: (usize, u64), merged: (usize, u64)) -> (usize, u64) {
+        if merged.0 >= local.0 { merged } else { local }
+    }
+
+    /// Plays and total track duration listened on local `date` across Spotifast and merged history.
+    pub(crate) fn today_play_stats(&self, date: jiff::civil::Date) -> (usize, u64) {
+        Self::pick_play_stats(
+            self.plays.stats_for_date(date),
+            crate::history::stats_for_date_in(&self.recents_view, date),
+        )
+    }
+
+    /// Plays and total track duration listened since Monday 00:00 of `date`'s local week.
+    pub(crate) fn week_play_stats(&self, date: jiff::civil::Date) -> (usize, u64) {
+        let start = crate::history::week_start_monday(date);
+        Self::pick_play_stats(
+            self.plays.stats_for_week(date),
+            crate::history::stats_for_range_in(&self.recents_view, start, date),
+        )
+    }
+
+    /// Pushes a What's New activity event (avoiding duplicate IDs) and keeps the feed bounded.
+    fn push_whats_new_event(&mut self, event: crate::settings::WhatsNewEvent) {
+        if self
+            .settings
+            .home
+            .whats_new_events
+            .iter()
+            .any(|existing| existing.id == event.id)
+        {
+            return;
+        }
+        self.settings.home.whats_new_events.insert(0, event);
+        self.settings.home.whats_new_events.truncate(40);
+        self.mark_settings_dirty();
+    }
+
+    /// Detects follower count increases from `total` against the saved baseline.
+    fn sync_follower_count(&mut self, total: u64) {
+        let prev = self.settings.home.known_followers;
+        if prev != Some(total) {
+            self.settings.home.known_followers = Some(total);
+            self.mark_settings_dirty();
+        }
+        if let Some(old_total) = prev
+            && total > old_total
+        {
+            let delta = total - old_total;
+            let now = jiff::Timestamp::now().to_string();
+            let date_key = now.get(..10).unwrap_or("");
+            self.push_whats_new_event(crate::settings::WhatsNewEvent {
+                id: format!("followers:{total}:{date_key}"),
+                timestamp: now,
+                kind: crate::settings::WhatsNewEventKind::FollowersGained { delta, total },
+            });
+        }
+    }
+
+    /// Detects follower count increases when the account profile refreshes.
+    fn sync_follower_whats_new(&mut self) {
+        let Some(total) = self
+            .user
+            .as_ref()
+            .and_then(|u| u.followers.as_ref())
+            .map(|f| f.total)
+        else {
+            return;
+        };
+        self.sync_follower_count(total);
+    }
+
+    /// Detects externally updated or newly populated playlists via snapshot_id & track count diffs.
+    fn sync_playlist_whats_new(&mut self) {
+        let Some(playlists) = self.library.playlists.get().cloned() else {
+            return;
+        };
+        if playlists.is_empty() {
+            return;
+        }
+        let baseline_empty = self.settings.home.playlist_snapshots.is_empty();
+        let art_px = 160;
+        let now = jiff::Timestamp::now().to_string();
+        let mut changed = false;
+        let mut detected = Vec::new();
+        for playlist in &playlists {
+            if playlist.id.is_empty() {
+                continue;
+            }
+            let Some(snap) = playlist.snapshot_id.as_deref().filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            let total = playlist.track_total();
+            let pending_local = self
+                .playlist_pages
+                .get(&playlist.id)
+                .is_some_and(|p| p.pending_writes > 0 || p.optimistic_snapshot.is_some());
+            if let Some(prev) = self.settings.home.playlist_snapshots.get(&playlist.id) {
+                if !baseline_empty && !pending_local && prev.snapshot_id != snap {
+                    let delta_tracks = total as i32 - prev.tracks_total as i32;
+                    if delta_tracks > 0 {
+                        detected.push(crate::settings::WhatsNewEvent {
+                            id: format!("pl:{}:{}", playlist.id, snap),
+                            timestamp: now.clone(),
+                            kind: crate::settings::WhatsNewEventKind::PlaylistUpdated {
+                                playlist_id: playlist.id.clone(),
+                                playlist_name: playlist.name.clone(),
+                                image_url: crate::api::models::pick_image(&playlist.images, art_px)
+                                    .map(str::to_string),
+                                delta_tracks,
+                                total_tracks: total,
+                            },
+                        });
+                    }
+                }
+                if prev.snapshot_id != snap || prev.tracks_total != total || prev.name != playlist.name {
+                    changed = true;
+                }
+            } else {
+                changed = true;
+            }
+            self.settings.home.playlist_snapshots.insert(
+                playlist.id.clone(),
+                crate::settings::PlaylistSnapshot {
+                    snapshot_id: snap.to_owned(),
+                    tracks_total: total,
+                    name: playlist.name.clone(),
+                },
+            );
+        }
+        if changed {
+            self.mark_settings_dirty();
+        }
+        for event in detected {
+            self.push_whats_new_event(event);
+        }
+    }
+
+    /// Latest release or activity marker (`YYYY-MM-DD|uri`) across followed music, podcasts, and events.
+    pub(crate) fn latest_whats_new_marker(&self) -> Option<String> {
+        let music = self
+            .home
+            .new_releases
+            .get()
+            .into_iter()
+            .flatten()
+            .filter_map(|album| {
+                let date = album.release_date.as_deref()?;
+                Some((date, album.uri.as_str()))
+            });
+        let episodes = self
+            .home
+            .podcasts
+            .iter()
+            .filter(|(show, _)| {
+                !self.audiobook_shows.contains(&show.uri) && self.is_saved(&show.uri) != Some(false)
+            })
+            .flat_map(|(_, eps)| eps.iter())
+            .filter_map(|ep| {
+                let date = ep.release_date.as_deref()?.get(..10)?;
+                Some((date, ep.uri.as_str()))
+            });
+        let activity = self.settings.home.whats_new_events.iter().filter_map(|ev| {
+            let date = ev.timestamp.get(..10)?;
+            Some((date, ev.id.as_str()))
+        });
+        music
+            .chain(episodes)
+            .chain(activity)
+            .max_by(|(da, ua), (db, ub)| da.cmp(db).then_with(|| ua.cmp(ub)))
+            .map(|(date, uri)| format!("{date}|{uri}"))
+    }
+
+    pub(crate) fn has_unseen_whats_new(&self) -> bool {
+        let Some(latest) = self.latest_whats_new_marker() else {
+            return false;
+        };
+        let Some(seen) = self.settings.home.whats_new_seen_at.as_deref() else {
+            return true;
+        };
+        let latest_date = latest.split('|').next().unwrap_or("");
+        let seen_date = seen.split('|').next().unwrap_or("");
+        latest_date > seen_date || (latest_date == seen_date && latest.as_str() != seen)
     }
 
     fn load_artist_albums(&mut self, id: &str, filter: DiscographyFilter) {
@@ -6666,6 +7124,7 @@ impl App {
         self.home.awaiting = 3;
         self.home.made_for_you_loading = false;
         self.home.refresh_failed = false;
+        self.refresh_last_week_top_songs();
         let generation = self.home.generation;
         if self.home.recently_played.get().is_none() {
             self.home.recently_played = Loadable::Loading;
@@ -6683,14 +7142,20 @@ impl App {
             limit: HOME_RECENTS,
         });
         self.backend.api(ApiRequest::TopArtists { generation });
-        let period = self.home.top_period;
-        let idx = period.index();
-        self.home.top_tracks_generations[idx] = generation;
-        if self.home.top_tracks_by_period[idx].get().is_none() {
-            self.home.top_tracks_by_period[idx] = Loadable::Loading;
+        // `LastWeek` is derived from local + recent plays; still ask Spotify
+        // for `ShortTerm` so `Recommendations` seeds and `ShortTerm` stay warm.
+        let fetch_period = if self.home.top_period == TopPeriod::LastWeek {
+            TopPeriod::ShortTerm
+        } else {
+            self.home.top_period
+        };
+        let fetch_idx = fetch_period.index();
+        self.home.top_tracks_generations[fetch_idx] = generation;
+        if self.home.top_tracks_by_period[fetch_idx].get().is_none() {
+            self.home.top_tracks_by_period[fetch_idx] = Loadable::Loading;
         }
         self.backend.api(ApiRequest::TopTracks {
-            period,
+            period: fetch_period,
             offset: 0,
             full: false,
             generation,
@@ -6853,8 +7318,42 @@ impl App {
         });
     }
 
+    fn last_week_top_tracks(&self, today: jiff::civil::Date) -> Vec<Track> {
+        let start = today.checked_sub(jiff::Span::new().days(6)).unwrap_or(today);
+        if self.recents_view.is_empty() && !self.plays.plays().is_empty() {
+            let merged = crate::history::merged(self.plays.plays(), &[]);
+            crate::history::top_tracks_in(&merged, start, today, 100)
+        } else {
+            crate::history::top_tracks_in(&self.recents_view, start, today, 100)
+        }
+    }
+
+    fn refresh_last_week_top_songs(&mut self) {
+        let tracks = self.last_week_top_tracks(jiff::Zoned::now().date());
+        let preview: Vec<Track> = tracks.iter().take(20).cloned().collect();
+        let idx = TopPeriod::LastWeek.index();
+        self.home.top_tracks_by_period[idx] = Loadable::Loaded(preview.clone());
+        self.home.top_songs_by_period[idx] = Loadable::Loaded(tracks.clone());
+        self.home.top_songs_by_period_loading[idx] = false;
+        self.home.top_songs_by_period_complete[idx] = true;
+        if self.home.top_period == TopPeriod::LastWeek {
+            self.home.top_tracks = Loadable::Loaded(preview);
+            self.home.top_songs = Loadable::Loaded(tracks);
+            self.home.top_songs_loading = false;
+            self.home.top_songs_complete = true;
+            if matches!(self.page(), Page::TopSongs) {
+                self.home.top_songs_generation += 1;
+                self.table_rows.remove(&Page::TopSongs);
+            }
+        }
+    }
+
     fn load_top_songs(&mut self, force: bool) {
         let period = self.home.top_period;
+        if period == TopPeriod::LastWeek {
+            self.refresh_last_week_top_songs();
+            return;
+        }
         let idx = period.index();
         if self.home.top_songs_by_period_loading[idx]
             || (!force && self.home.top_songs_by_period_complete[idx])
@@ -6887,6 +7386,10 @@ impl App {
             return;
         }
         self.home.top_period = period;
+        if period == TopPeriod::LastWeek {
+            self.refresh_last_week_top_songs();
+            return;
+        }
         let idx = period.index();
 
         match &self.home.top_tracks_by_period[idx] {
@@ -7261,6 +7764,22 @@ impl App {
                 self.load_new_releases();
                 self.load_new_release_page(true);
             }
+            Page::WhatsNew => {
+                self.load_new_releases();
+                if self.library.shows.loaded_once {
+                    self.home.podcasts_generation = 0;
+                    self.request_home_episodes();
+                } else {
+                    self.library.shows.reset();
+                }
+                if self.network_reachable {
+                    self.whats_new_activity_checked_at = Some(Instant::now());
+                    if let Some(id) = self.user_id().map(str::to_string) {
+                        self.backend.api(ApiRequest::UserProfile { id });
+                    }
+                    self.load_playlists();
+                }
+            }
             Page::LikedSongs => {
                 self.refresh_liked_songs();
                 return;
@@ -7336,6 +7855,9 @@ impl App {
                     return;
                 }
                 self.show_pages.remove(id);
+            }
+            Page::UserProfile(id) => {
+                self.user_pages.remove(id);
             }
             Page::Radio(seed) => {
                 // A new mix replaces the songs on screen when it arrives.
@@ -8270,6 +8792,7 @@ impl App {
                         self.request_account_caches();
                     }
                     self.user = Some(user);
+                    self.sync_follower_whats_new();
                     let page = self.page().clone();
                     self.ensure_loaded(page);
                     if let Some(now) = self.now_playing() {
@@ -8415,7 +8938,7 @@ impl App {
                             && self
                                 .shuffle_set_at
                                 .is_none_or(|at| at.elapsed() > Duration::from_secs(5))
-                            && !(self.targets_own_soloist()
+                            && !(self.can_smart_shuffle()
                                 && self.shuffle_mode().is_smart()
                                 && (self.smart_pending.is_some()
                                     || self.smart_source.is_some()
@@ -8829,6 +9352,7 @@ impl App {
                         self.note_listed_playlists();
                     }
                     if next_offset.is_none() {
+                        self.sync_playlist_whats_new();
                         self.store_library_cache();
                     }
                 }
@@ -9657,6 +10181,20 @@ impl App {
                     };
                 }
             }
+            ApiResponse::UserProfile { id, result } => {
+                if let Ok(profile) = &result
+                    && self.user_id() == Some(id.as_str())
+                    && let Some(followers) = profile.followers_count
+                {
+                    self.sync_follower_count(followers);
+                }
+                if let Some(page) = self.user_pages.get_mut(&id) {
+                    page.profile = match result {
+                        Ok(profile) => Loadable::Loaded(profile),
+                        Err(error) => Loadable::Failed(friendly_api_error(self.locale, &error)),
+                    };
+                }
+            }
             ApiResponse::ArtistTopTracks {
                 id,
                 generation,
@@ -10280,6 +10818,7 @@ impl App {
         const MAX_PLAYLIST_PAGES: usize = 12;
         const MAX_ALBUM_PAGES: usize = 16;
         const MAX_ARTIST_PAGES: usize = 10;
+        const MAX_USER_PAGES: usize = 12;
         const MAX_SHOW_PAGES: usize = 8;
         const MAX_RADIO_PAGES: usize = 6;
         const MAX_TRACK_CACHE: usize = 800;
@@ -10292,6 +10831,7 @@ impl App {
         }
         let mut protected_albums = HashSet::new();
         let mut protected_artists = HashSet::new();
+        let mut protected_users = HashSet::new();
         let mut protected_shows = HashSet::new();
         let mut protected_radios = HashSet::new();
         if let Some(seed) = self
@@ -10309,6 +10849,9 @@ impl App {
             }
             Page::Artist(id) => {
                 protected_artists.insert(id.clone());
+            }
+            Page::UserProfile(id) => {
+                protected_users.insert(id.clone());
             }
             Page::Show(id) => {
                 protected_shows.insert(id.clone());
@@ -10360,6 +10903,13 @@ impl App {
             MAX_ARTIST_PAGES,
         );
         evict_lru_map(
+            &mut self.user_pages,
+            &self.page_used,
+            |id| Page::UserProfile(id.to_string()),
+            &protected_users,
+            MAX_USER_PAGES,
+        );
+        evict_lru_map(
             &mut self.show_pages,
             &self.page_used,
             |id| Page::Show(id.to_string()),
@@ -10377,6 +10927,7 @@ impl App {
             Page::Playlist(id) => self.playlist_pages.contains_key(id),
             Page::Album(id) => self.album_pages.contains_key(id),
             Page::Artist(id) => self.artist_pages.contains_key(id),
+            Page::UserProfile(id) => self.user_pages.contains_key(id),
             Page::Show(id) => self.show_pages.contains_key(id),
             Page::Radio(seed) => self.radio_pages.contains_key(seed),
             _ => true,
@@ -10478,6 +11029,7 @@ impl App {
     /// Merges local and Spotify history for the Recent tab.
     fn rebuild_recents(&mut self) {
         self.recents_view = crate::history::merged(self.plays.plays(), &self.recents.items).into();
+        self.refresh_last_week_top_songs();
     }
 
     /// Adds a page of play history to the Recents tab.
@@ -10678,6 +11230,7 @@ impl App {
         if self.soloist_waiting() && !self.soloist_recovering() {
             return;
         }
+        self.active_home_radio_seed = None;
         // Whatever starts now outranks a play-search still in flight.
         self.supersede_play_search();
         // A play from a row names its row again after this.
@@ -10861,6 +11414,21 @@ impl App {
         if !mode.is_smart() {
             self.clear_smart_shuffle();
         }
+        if mode.is_smart() {
+            self.shuffle_wanted = true;
+            self.shuffle_set_at = Some(Instant::now());
+            self.session_dirty = true;
+            self.reweave_playing_for_smart_shuffle();
+            if self.smart_pending.is_some() {
+                if let Some(assumed) = &mut self.assumed_context {
+                    assumed.shuffle = Some(true);
+                }
+                self.note_shuffle_pending();
+            } else {
+                self.apply_shuffle(true);
+            }
+            return;
+        }
         self.apply_shuffle(mode.shuffles());
         if let Some(restore) = restore {
             // Suggestions belong to Next up. A matching song queued by the
@@ -10883,9 +11451,6 @@ impl App {
                 self.play_smart_restore(restore);
             }
         }
-        if mode.is_smart() {
-            self.reweave_playing_for_smart_shuffle();
-        }
     }
 
     fn reweave_playing_for_smart_shuffle(&mut self) {
@@ -10903,29 +11468,30 @@ impl App {
             .then(|| self.local_list.clone())
             .flatten()
             .or_else(|| {
-                context_uri
-                    .as_deref()
-                    .and_then(|context| self.smart_context_track_uris(context))
+                context_uri.as_deref().and_then(|context| {
+                    self.smart_context_track_uris(context)
+                        .or_else(|| self.context_track_uris(context))
+                })
             })
             .unwrap_or_default();
         if uris.len() <= 1
-            && context_uri.is_none()
             && let Some(fetched) = self.queue.get()
             && !fetched.queue.is_empty()
         {
             uris.clear();
             uris.push(now.uri.clone());
             let manual = Self::end_of_queued_rows(&fetched.queue, &self.manual_queue);
-            uris.extend(
-                fetched.queue[manual..]
-                    .iter()
-                    .map(|item| item.uri().to_string())
-                    .filter(|uri| *uri != now.uri),
-            );
+            for item in &fetched.queue[manual..] {
+                let uri = item.uri();
+                if uri != now.uri
+                    && crate::util::uri_kind(uri) == Some("track")
+                    && !uris.iter().any(|existing| existing == uri)
+                {
+                    uris.push(uri.to_string());
+                }
+            }
         }
         if uris.len() <= 1 {
-            self.smart_wanted = false;
-            self.session_dirty = true;
             return;
         }
         let mut request = PlayRequest::tracks(uris).starting_at_uri(&now.uri);
@@ -11159,10 +11725,9 @@ impl App {
                 });
                 return;
             }
-            // Keep Spotify's complete context when only a prefix is loaded,
-            // or a remote start cannot fit all original songs in one request.
-            self.smart_wanted = false;
-            self.session_dirty = true;
+            // Keep Spotify's complete context when only a prefix is loaded, or a
+            // remote start cannot fit all original songs in one request, without
+            // turning off the listener's Smart Shuffle toggle.
         }
         if request.offset_uri.is_none()
             && request.offset_position.is_none()
@@ -12150,6 +12715,7 @@ impl App {
             Action::Next
             | Action::PlayContext { .. }
             | Action::PlayUris { .. }
+            | Action::PlayHomeRadio { .. }
             | Action::PlayEpisode { .. }
             | Action::PlayFromRow { .. }
             | Action::ShufflePlay(_) => true,
@@ -13264,6 +13830,7 @@ impl App {
                 Action::PlayContext { .. }
                     | Action::PlayEpisode { .. }
                     | Action::PlayUris { .. }
+                    | Action::PlayHomeRadio { .. }
                     | Action::PlayFromRow { .. }
                     | Action::ShufflePlay(_)
             );
@@ -13276,6 +13843,7 @@ impl App {
                     | Action::PlaySearchMatch { .. }
                     | Action::PlayEpisode { .. }
                     | Action::PlayUris { .. }
+                    | Action::PlayHomeRadio { .. }
                     | Action::PlayFromRow { .. }
                     | Action::ShufflePlay(_)
                     | Action::TogglePlay
@@ -14205,8 +14773,70 @@ impl App {
                 self.history_index = 0;
             }
             Action::ToggleSidebar => {
-                self.settings.sidebar_visible = !self.settings.sidebar_visible;
-                self.settings_dirty = true;
+                self.settings.cycle_sidebar_mode();
+                self.mark_settings_dirty();
+            }
+            Action::SetHomeFilter(filter) => {
+                self.home.filter = filter;
+            }
+            Action::SetHomeBentoWidget(mode) => {
+                self.settings.home.bento_widget = mode;
+                self.mark_settings_dirty();
+            }
+            Action::SetHomePulseRange(range) => {
+                self.settings.home.pulse_range = range;
+                self.mark_settings_dirty();
+            }
+            Action::SetHomeLayoutLocked(locked) => {
+                self.settings.home.layout_locked = locked;
+                self.mark_settings_dirty();
+            }
+            Action::ReorderHomeShelf { id, to_index } => {
+                let mut order =
+                    crate::settings::normalized_shelf_order(&self.settings.home.shelf_order);
+                if let Some(from) = order.iter().position(|&known| known == id) {
+                    order.remove(from);
+                    let at = to_index.min(order.len());
+                    order.insert(at, id);
+                    self.settings.home.shelf_order = order;
+                    self.mark_settings_dirty();
+                }
+            }
+            Action::ResetHomeShelfOrder => {
+                self.settings.home.shelf_order = crate::settings::HomeShelfId::ALL.to_vec();
+                self.mark_settings_dirty();
+            }
+            Action::SetWhatsNewFilter(filter) => {
+                self.home.whats_new_filter = filter;
+            }
+            Action::MarkWhatsNewSeen(marker) => {
+                if self.settings.home.whats_new_seen_at.as_deref() != Some(marker.as_str()) {
+                    self.settings.home.whats_new_seen_at = Some(marker);
+                    self.mark_settings_dirty();
+                }
+            }
+            Action::PlayHomeRadio { seed, start_uri } => {
+                if let Some(songs) = self
+                    .radio_pages
+                    .get(&seed)
+                    .and_then(|page| page.songs.get())
+                    .filter(|songs| !songs.is_empty())
+                    .cloned()
+                {
+                    let uris = build_home_radio_uris(&songs, start_uri.as_deref());
+                    self.play_home_radio_uris(&seed, uris);
+                } else if self.is_connected() && self.network_reachable {
+                    self.pending_home_radio_play = Some((seed.clone(), start_uri));
+                    self.load_radio(&seed);
+                }
+            }
+            Action::SetPlayerBarStyle(style) => {
+                self.settings.player_bar_style = style;
+                self.mark_settings_dirty();
+            }
+            Action::SetTintIntensity(intensity) => {
+                self.settings.tint_intensity = intensity;
+                self.mark_settings_dirty();
             }
             Action::ToggleQueuePanel => {
                 self.show_queue_panel = !self.show_queue_panel;
@@ -14233,6 +14863,13 @@ impl App {
                     self.show_lyrics_panel = false;
                     self.refresh_friends();
                 }
+            }
+            Action::TogglePrivateSession => {
+                let next = !self.private_session_active();
+                self.set_private_session(next);
+            }
+            Action::SetPrivateSession(active) => {
+                self.set_private_session(active);
             }
             Action::SetLyricsFullscreen(fullscreen) => {
                 if fullscreen && self.lyrics_fullscreen.is_none() {
@@ -15241,6 +15878,17 @@ impl App {
         owned || playlist.collaborative || self.editable_by_grant.contains(&playlist.uri)
     }
 
+    /// Whether the currently open page is a playlist whose tracks the signed-in user may edit.
+    pub(crate) fn current_page_is_editable_playlist(&self) -> bool {
+        let Page::Playlist(id) = self.page() else {
+            return false;
+        };
+        let playlist = self
+            .library_entry(id)
+            .or_else(|| self.playlist_pages.get(id).and_then(|page| page.playlist.get()));
+        playlist.is_some_and(|playlist| self.can_edit_playlist(playlist))
+    }
+
     /// The playing playlist as a row context, when the now-playing track
     /// comes from a playlist the account may edit. The player bar menu
     /// uses this so removal matches a row's URI-based entry; moves need
@@ -15495,24 +16143,43 @@ impl App {
 
     /// Records a track after enough active listening time.
     ///
-    /// Paused time and seeking do not count. Each track is recorded once.
+    /// Paused time and seeking do not count. Each playback occurrence (including
+    /// Repeat One / track loops) is counted once. Private sessions pause local
+    /// play history recording.
     fn note_listening(&mut self) {
+        if self.private_session_active() {
+            self.listening = None;
+            return;
+        }
         let Some(now) = self.now_playing_live() else {
             self.listening = None;
             return;
         };
-        let listening = match &mut self.listening {
-            Some(held) if held.uri == now.uri => held,
-            _ => {
-                self.listening = Some(Listening {
-                    uri: now.uri.clone(),
-                    listened: std::time::Duration::ZERO,
-                    playing_since: now.playing.then(Instant::now),
-                    recorded: false,
-                });
-                return;
+        let sequence = now.local.then_some(self.local.track_sequence);
+        let restarted = match &self.listening {
+            Some(held) if held.uri == now.uri => {
+                held.sequence != sequence
+                    || (held.recorded
+                        && held.last_position_ms > 15_000
+                        && now.position_ms < 5_000
+                        && now.playing)
             }
+            _ => true,
         };
+        let listening = if restarted {
+            self.listening = Some(Listening {
+                uri: now.uri.clone(),
+                sequence,
+                last_position_ms: now.position_ms,
+                listened: std::time::Duration::ZERO,
+                playing_since: now.playing.then(Instant::now),
+                recorded: false,
+            });
+            return;
+        } else {
+            self.listening.as_mut().expect("held exists when !restarted")
+        };
+        listening.last_position_ms = now.position_ms;
         match (now.playing, listening.playing_since) {
             // Add the completed interval when playback pauses.
             (false, Some(since)) => {
@@ -15579,7 +16246,9 @@ impl App {
                 .collect::<Vec<_>>()
                 .join(", ");
             let saved = self.is_saved(&now.uri).unwrap_or(false);
-            let tint = self.now_playing_tint().unwrap_or(self.palette.accent);
+            let tint = self
+                .resolved_now_playing_tint()
+                .unwrap_or(self.palette.accent);
             let accent = Some([tint.r(), tint.g(), tint.b()]);
             crate::notch::NotchTrackInfo {
                 playing: now.playing,
@@ -15609,10 +16278,14 @@ impl App {
 
     /// Keeps the current track in the window and taskbar title (#94).
     fn sync_window_title(&mut self, ctx: &egui::Context) {
-        let title = match self.now_playing().filter(|now| now.playing) {
-            Some(now) if now.subtitle.is_empty() => format!("{} - Spotifast", now.title),
-            Some(now) => format!("{} - {}", now.subtitle, now.title),
-            None => "Spotifast".to_string(),
+        let title = if self.private_session_active() {
+            "Spotifast".to_string()
+        } else {
+            match self.now_playing().filter(|now| now.playing) {
+                Some(now) if now.subtitle.is_empty() => format!("{} - Spotifast", now.title),
+                Some(now) => format!("{} - {}", now.subtitle, now.title),
+                None => "Spotifast".to_string(),
+            }
         };
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
@@ -16320,6 +16993,24 @@ fn cap_uris(uris: &[String], index: u32) -> (Vec<String>, u32) {
     let start = (index as usize).min(uris.len().saturating_sub(1));
     let end = (start + MAX_PLAYED_URIS).min(uris.len());
     (uris[start..end].to_vec(), 0)
+}
+
+/// Builds the full playback URI list for Home's Live Radio card, putting any
+/// clicked song first followed by all remaining station tracks.
+pub(crate) fn build_home_radio_uris(songs: &[Track], start_uri: Option<&str>) -> Vec<String> {
+    let mut out = Vec::with_capacity(songs.len() + 1);
+    let mut seen = HashSet::new();
+    if let Some(start) = start_uri.filter(|u| !u.is_empty())
+        && seen.insert(start.to_string())
+    {
+        out.push(start.to_string());
+    }
+    for track in songs {
+        if !track.uri.is_empty() && seen.insert(track.uri.clone()) {
+            out.push(track.uri.clone());
+        }
+    }
+    out
 }
 
 /// Caps large track lists at 500 items that include the selected row,
@@ -17150,6 +17841,7 @@ mod tests {
                     crate::ui::widgets::shelf(
                         ui,
                         &app.palette,
+                        app.locale,
                         "wheel-test-shelf",
                         "Shelf",
                         |ui| {
@@ -19206,17 +19898,24 @@ mod tests {
         assert_eq!(TopPeriod::ShortTerm.index(), 0);
         assert_eq!(TopPeriod::MediumTerm.index(), 1);
         assert_eq!(TopPeriod::LongTerm.index(), 2);
+        assert_eq!(TopPeriod::LastWeek.index(), 3);
 
         assert_eq!(TopPeriod::from_index(0), TopPeriod::ShortTerm);
         assert_eq!(TopPeriod::from_index(1), TopPeriod::MediumTerm);
         assert_eq!(TopPeriod::from_index(2), TopPeriod::LongTerm);
+        assert_eq!(TopPeriod::from_index(3), TopPeriod::LastWeek);
         assert_eq!(TopPeriod::from_index(99), TopPeriod::ShortTerm);
 
         let en = crate::i18n::Locale::English;
+        assert_eq!(TopPeriod::LastWeek.label(en), "Last 7 days");
         assert_eq!(TopPeriod::ShortTerm.label(en), "Last 4 weeks");
         assert_eq!(TopPeriod::MediumTerm.label(en), "Last 6 months");
         assert_eq!(TopPeriod::LongTerm.label(en), "Past year");
 
+        assert_eq!(
+            TopPeriod::LastWeek.subtitle(en),
+            "Calculated from your listening over the last 7 days."
+        );
         assert_eq!(
             TopPeriod::ShortTerm.subtitle(en),
             "Calculated from your listening over approximately the last 4 weeks."
@@ -19662,6 +20361,42 @@ mod tests {
             app.home.top_tracks.get(),
             Some(&vec![song("spotify:track:short-top-1")])
         );
+    }
+
+    #[test]
+    fn switching_to_last_week_ranks_local_history_without_api_requests() {
+        let mut app = connected_listener();
+        let now = jiff::Timestamp::now().to_string();
+        app.recents.items.push(crate::api::models::PlayHistory {
+            track: song("spotify:track:once"),
+            played_at: Some(now.clone()),
+            context: None,
+        });
+        for _ in 0..2 {
+            app.recents.items.push(crate::api::models::PlayHistory {
+                track: song("spotify:track:twice"),
+                played_at: Some(now.clone()),
+                context: None,
+            });
+        }
+        app.rebuild_recents();
+        app.backend.take_top_tracks_requests();
+
+        app.set_top_period(TopPeriod::LastWeek);
+        app.open(Page::TopSongs);
+
+        assert_eq!(app.home.top_period, TopPeriod::LastWeek);
+        assert!(app.backend.take_top_tracks_requests().is_empty());
+        assert!(app.home.top_songs_complete);
+        let uris: Vec<&str> = app
+            .home
+            .top_tracks
+            .get()
+            .expect("LastWeek preview loaded")
+            .iter()
+            .map(|track| track.uri.as_str())
+            .collect();
+        assert_eq!(uris, vec!["spotify:track:twice", "spotify:track:once"]);
     }
 
     fn connected_listener() -> App {
@@ -25098,6 +25833,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn resolved_now_playing_art_picks_colorful_bucket_and_holds_pending_tint() {
+        let mut app = test_app("held-accent");
+        let url_a = "https://i.scdn.co/image/cover-a".to_string();
+        let url_b = "https://i.scdn.co/image/cover-b".to_string();
+        app.local = crate::player::LocalState {
+            connected: true,
+            playback: crate::player::Playback::Playing,
+            track: Some(crate::player::LocalTrack {
+                uri: "spotify:track:a".into(),
+                title: "Track A".into(),
+                artists: vec![crate::api::models::ArtistRef {
+                    name: "Artist".into(),
+                    ..Default::default()
+                }],
+                art_url: Some(url_a.clone()),
+                duration_ms: 180_000,
+                ..Default::default()
+            }),
+            track_sequence: 1,
+            ..Default::default()
+        };
+
+        app.handle_backend_events(vec![Event::Accent {
+            url: url_a.clone(),
+            color: [16, 18, 20],
+            palette: vec![[16, 18, 20], [215, 50, 140]],
+        }]);
+        assert_eq!(app.now_playing_primary_rgb(), Some([215, 50, 140]));
+        let tint_a = app.palette.tint_from_art([215, 50, 140]);
+        assert_eq!(app.resolved_now_playing_tint(), Some(tint_a));
+
+        // Skip to Track B whose accent is not yet resolved: prior artwork tint stays held
+        // rather than flashing to None / fallback green.
+        app.local.track = Some(crate::player::LocalTrack {
+            uri: "spotify:track:b".into(),
+            title: "Track B".into(),
+            artists: vec![crate::api::models::ArtistRef {
+                name: "Artist".into(),
+                ..Default::default()
+            }],
+            art_url: Some(url_b.clone()),
+            duration_ms: 180_000,
+            ..Default::default()
+        });
+        app.local.track_sequence = 2;
+        assert_eq!(app.now_playing_tint(), None);
+        assert_eq!(app.resolved_now_playing_tint(), Some(tint_a));
+        assert_eq!(app.resolved_now_playing_primary_rgb(), Some([215, 50, 140]));
+
+        // When Track B's colour resolves, the target immediately updates to Track B.
+        app.handle_backend_events(vec![Event::Accent {
+            url: url_b,
+            color: [30, 90, 210],
+            palette: vec![[30, 90, 210]],
+        }]);
+        assert_eq!(
+            app.resolved_now_playing_tint(),
+            Some(app.palette.tint_from_art([30, 90, 210]))
+        );
+        app.backend.shutdown();
+    }
+
     /// Two lookups of one adder can overlap; the one that found nothing
     /// must not turn a shown name back into the bare id.
     #[test]
@@ -25737,6 +26535,7 @@ mod tests {
         for (choice, expected) in [
             (ThemeChoice::Dark, Palette::dark()),
             (ThemeChoice::Light, Palette::light()),
+            (ThemeChoice::SpotifastModern, Palette::spotifast_modern()),
         ] {
             app.apply(Action::SetTheme(choice), &ctx);
             let mut updated = theme.clone();
@@ -25991,7 +26790,10 @@ mod tests {
             assert!(app.settings.custom_theme.is_none());
             assert!(app.settings.custom_theme_cache.is_none());
             if choice != ThemeChoice::System {
-                assert_eq!(app.palette.dark, choice == ThemeChoice::Dark);
+                assert_eq!(
+                    app.palette.dark,
+                    matches!(choice, ThemeChoice::Dark | ThemeChoice::SpotifastModern)
+                );
             }
         }
     }
@@ -34611,6 +35413,171 @@ mod tests {
     }
 
     #[test]
+    fn note_listening_counts_track_wrap_loop_and_unified_recents() {
+        let state_dir = std::env::temp_dir().join(format!(
+            "spotifast-loop-count-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&state_dir);
+        let mut app = App::new(
+            &crate::backend::Waker::default(),
+            crate::paths::AppDirs {
+                config: state_dir.join("config"),
+                state: state_dir.clone(),
+                cache: state_dir.join("cache"),
+            },
+            crate::settings::Settings::default(),
+            AppOptions {
+                media_controls: false,
+                restore_sign_in: false,
+                tray: false,
+                autostart: false,
+            },
+        );
+        app.local = LocalState {
+            connected: true,
+            playback: Playback::Playing,
+            repeat: RepeatMode::Track,
+            track_sequence: 1,
+            position_ms: 45_000,
+            track: Some(crate::player::LocalTrack {
+                uri: "spotify:track:loop".into(),
+                title: "Loop".into(),
+                duration_ms: 180_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        app.note_listening();
+        app.listening.as_mut().unwrap().playing_since =
+            Some(Instant::now() - Duration::from_secs(31));
+        app.note_listening();
+        assert_eq!(app.track_play_count("spotify:track:loop"), 1);
+
+        // Simulate track looping back to start even if sequence was unchanged or remote restarted.
+        app.local.position_ms = 1_000;
+        app.note_listening();
+        assert!(
+            !app.listening.as_ref().unwrap().recorded,
+            "loop restart must clear recorded flag for next play"
+        );
+        app.listening.as_mut().unwrap().playing_since =
+            Some(Instant::now() - Duration::from_secs(31));
+        app.note_listening();
+        assert_eq!(app.track_play_count("spotify:track:loop"), 2);
+
+        app.backend.shutdown();
+        let _ = std::fs::remove_dir_all(state_dir);
+    }
+
+    #[test]
+    fn private_session_blocks_listening_and_masks_title_until_expiry_or_reset() {
+        let state_dir = std::env::temp_dir().join(format!(
+            "spotifast-private-session-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&state_dir);
+        let mut app = App::new(
+            &crate::backend::Waker::default(),
+            crate::paths::AppDirs {
+                config: state_dir.join("config"),
+                state: state_dir.clone(),
+                cache: state_dir.join("cache"),
+            },
+            crate::settings::Settings::default(),
+            AppOptions {
+                media_controls: false,
+                restore_sign_in: false,
+                tray: false,
+                autostart: false,
+            },
+        );
+        let ctx = egui::Context::default();
+        app.local = LocalState {
+            connected: true,
+            playback: Playback::Playing,
+            track_sequence: 1,
+            position_ms: 45_000,
+            track: Some(crate::player::LocalTrack {
+                uri: "spotify:track:secret".into(),
+                title: "Secret Song".into(),
+                artists: vec![crate::api::models::ArtistRef {
+                    name: "Hidden Artist".into(),
+                    ..Default::default()
+                }],
+                duration_ms: 180_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        app.apply(Action::TogglePrivateSession, &ctx);
+        assert!(app.is_private_session());
+        app.sync_window_title(&ctx);
+        assert_eq!(app.window_title, "Spotifast");
+
+        app.note_listening();
+        assert!(app.listening.is_none());
+        assert_eq!(app.track_play_count("spotify:track:secret"), 0);
+
+        // Expiry resumes title updates and local listening counts.
+        app.private_session_until = Some(Instant::now() - Duration::from_secs(1));
+        assert!(!app.is_private_session());
+        app.sync_window_title(&ctx);
+        assert_eq!(app.window_title, "Hidden Artist - Secret Song");
+
+        app.note_listening();
+        app.listening.as_mut().unwrap().playing_since =
+            Some(Instant::now() - Duration::from_secs(31));
+        app.note_listening();
+        assert_eq!(app.track_play_count("spotify:track:secret"), 1);
+
+        // Sign-out / reset clears active private session.
+        app.apply(Action::SetPrivateSession(true), &ctx);
+        assert!(app.is_private_session());
+        app.reset_data();
+        assert!(!app.is_private_session());
+
+        app.backend.shutdown();
+        let _ = std::fs::remove_dir_all(state_dir);
+    }
+
+    #[test]
+    fn build_home_radio_uris_keeps_clicked_order_before_remaining_station_tracks() {
+        let station: Vec<Track> = ["a", "b", "c", "d", "e", "f"]
+            .into_iter()
+            .map(|id| Track {
+                id: Some(id.into()),
+                uri: format!("spotify:track:{id}"),
+                name: id.into(),
+                ..Default::default()
+            })
+            .collect();
+        let full = build_home_radio_uris(&station, None);
+        assert_eq!(full.len(), 6);
+        assert_eq!(full[0], "spotify:track:a");
+
+        let from_row = build_home_radio_uris(&station, Some("spotify:track:b"));
+        assert_eq!(
+            from_row,
+            vec![
+                "spotify:track:b",
+                "spotify:track:a",
+                "spotify:track:c",
+                "spotify:track:d",
+                "spotify:track:e",
+                "spotify:track:f",
+            ]
+        );
+    }
+
+    #[test]
     fn shuffled_header_play_of_a_shown_view_starts_at_a_random_row() {
         let mut app = headless_app();
         app.backend.set_offline(true);
@@ -37970,6 +38937,80 @@ mod tests {
             shuffle_requests.is_empty(),
             "shuffle and play must be one ordered request"
         );
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn smart_shuffle_reweave_uses_partial_context_or_queue_without_disabling() {
+        let ctx = egui::Context::default();
+        let mut app = headless_app();
+        app.local_ready = true;
+        app.local.connected = true;
+        app.local.playback = Playback::Playing;
+        let current = "spotify:track:q1".to_string();
+        app.local.track = Some(crate::player::LocalTrack {
+            uri: current.clone(),
+            duration_ms: 180_000,
+            ..Default::default()
+        });
+        app.assumed_context = Some(AssumedContext {
+            uri: "spotify:playlist:unloaded".into(),
+            shuffle: Some(true),
+            at: Instant::now(),
+        });
+        app.queue = Loadable::Loaded(crate::api::models::Queue {
+            currently_playing: None,
+            queue: vec![
+                PlayableItem::Track(Track {
+                    uri: "spotify:track:q2".into(),
+                    ..Default::default()
+                }),
+                PlayableItem::Track(Track {
+                    uri: "spotify:track:q3".into(),
+                    ..Default::default()
+                }),
+            ],
+        });
+        app.shuffle_wanted = true;
+        app.smart_wanted = false;
+
+        app.apply(Action::ToggleShuffle, &ctx);
+        assert_eq!(app.shuffle_mode(), ShuffleMode::Smart);
+        assert!(app.smart_wanted);
+        assert!(app.smart_pending.is_some());
+        assert_eq!(
+            app.smart_tracks.first().map(String::as_str),
+            Some("spotify:track:q1")
+        );
+        let mut sorted = app.smart_tracks.clone();
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec!["spotify:track:q1", "spotify:track:q2", "spotify:track:q3"]
+        );
+
+        let generation = app.smart_generation;
+        let pending = app.smart_pending.clone().unwrap();
+        app.on_smart_shuffle(generation, pending, Ok(vec!["spotify:track:rec1".into()]));
+        assert!(app.smart_rows.contains("spotify:track:rec1"));
+        assert_eq!(app.shuffle_mode(), ShuffleMode::Smart);
+
+        // When spirc reports shuffle = false right after loading a woven list,
+        // Smart Shuffle must remain enabled on Local playback even past grace window.
+        app.shuffle_set_at = Some(Instant::now() - Duration::from_secs(10));
+        app.handle_local(LocalState {
+            connected: true,
+            playback: Playback::Playing,
+            shuffle: false,
+            track: Some(crate::player::LocalTrack {
+                uri: current,
+                duration_ms: 180_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert!(app.shuffle_wanted);
+        assert_eq!(app.shuffle_mode(), ShuffleMode::Smart);
         app.backend.shutdown();
     }
 }

@@ -4197,6 +4197,217 @@ msgstr "Crossfade"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "Tonar mjukt ut volymen i slutet av ett spår och in på nästa."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "Fäll ihop sidofältet (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "Fäll ihop sidofältet (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "Musik"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "Topp"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "Piller"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "Bred"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "Klassisk"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "Stark"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "Balanserad"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "Liveradio"
+
+msgid "Player bar style"
+msgstr "Stil på spelarfältet"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr ""
+"Välj ett svävande piller, ett rundat fält eller den klassiska kant-till-kant-layouten."
+
+msgid "Album colour intensity"
+msgstr "Färgintensitet från albumomslaget"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr ""
+"Styr hur starkt det spelade omslaget färgar ytor och accenter."
+
+msgid "Touchpad swipe navigation"
+msgstr "Svepnavigering med styrplatta"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr ""
+"Svep horisontellt med två fingrar på en styrplatta för att gå bakåt eller framåt."
+
+msgid "Top songs & Friends"
+msgstr "Topplåtar & Vänner"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast-puls"
+
+msgid "More from artist"
+msgstr "Mer från artisten"
+
+msgid "More quick access"
+msgstr "Mer snabbåtkomst"
+
+msgid "Customize home"
+msgstr "Anpassa startsidan"
+
+msgid "Lock layout"
+msgstr "Lås layout"
+
+msgid "Reset"
+msgstr "Återställ"
+
+msgid "Drag to reorder"
+msgstr "Dra för att ändra ordning"
+
+msgid "Explicit"
+msgstr "Explicit"
+
+msgid "Today"
+msgstr "Idag"
+
+msgid "All time"
+msgstr "Genom tiderna"
+
+msgid "Nothing new yet"
+msgstr "Inget nytt ännu"
+
+msgid "What's New"
+msgstr "Nyheter"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "De senaste släppen från artister och poddar du följer."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "Ny musik och poddavsnitt från artister och program du följer visas här."
+
+#, rust-format
+msgid "{time} left"
+msgstr "{time} kvar"
+
+msgid "Play all"
+msgstr "Spela alla"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify-popularitet och utgivningsår"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "Dina spelningar i Spotifast på den här enheten"
+
+msgid "Activity"
+msgstr "Aktivitet"
+
+msgid "All time (this device)"
+msgstr "Genom tiderna (den här enheten)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "Nya följare (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "Spelningar i din lyssningshistorik"
+
+msgid "Scroll left"
+msgstr "Bläddra åt vänster"
+
+msgid "Scroll right"
+msgstr "Bläddra åt höger"
+
+msgid "Today (all songs)"
+msgstr "Idag (alla låtar)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "Totalt antal följare: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "{count} nya låtar • {total} spår"
+
+msgid "Private session enabled for 6 hours"
+msgstr "Privat session aktiverad i 6 timmar"
+
+msgid "Private session ended"
+msgstr "Privat session avslutad"
+
+msgid "Private session"
+msgstr "Privat session"
+
+msgid "End private session"
+msgstr "Avsluta privat session"
+
+msgid "Profile"
+msgstr "Profil"
+
+msgid "Public playlists"
+msgstr "Offentliga spellistor"
+
+msgid "Recently played artists"
+msgstr "Nyligen spelade artister"
+
+msgid "Recently listened"
+msgstr "Nyligen lyssnat"
+
+msgid "No public playlists"
+msgstr "Inga offentliga spellistor"
+
+msgid "This profile has no public playlists yet."
+msgstr "Den här profilen har inga offentliga spellistor ännu."
+
+msgid "You"
+msgstr "Du"
+
+#, rust-format
+msgid "{count} following"
+msgstr "{count} följer"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} offentlig spellista"
+msgstr[1] "{count} offentliga spellistor"
+
+msgid "No activity yet"
+msgstr "Ingen aktivitet ännu"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "Nya följare och låtar som lagts till i dina spellistor visas här."
+
+msgid "This week"
+msgstr "Denna vecka"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "Måndag till söndag. Klicka för att visa all tid."
+
+msgid "Click to show this week."
+msgstr "Klicka för att visa denna vecka."
+
+msgid "Last 7 days"
+msgstr "Senaste 7 dagarna"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "Beräknat utifrån din lyssning under de senaste 7 dagarna."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Parkoppla en gång i Spotify"
 

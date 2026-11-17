@@ -4157,6 +4157,213 @@ msgstr "크로스페이드"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "트랙 끝에서 볼륨을 부드럽게 줄이고 다음 트랙에서 서서히 높입니다."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "사이드바 접기 (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "사이드바 접기 (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "음악"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "인기"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "필"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "와이드"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "클래식"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "선명하게"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "균형 있게"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "라이브 라디오"
+
+msgid "Player bar style"
+msgstr "플레이어 바 스타일"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr "플로팅 필, 둥근 바 또는 기본 전체 너비 레이아웃 중 하나를 선택합니다."
+
+msgid "Album colour intensity"
+msgstr "앨범 아트 색상 강도"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr "재생 중인 앨범 커버가 배경과 강조 색상에 얼마나 강하게 반영될지 조절합니다."
+
+msgid "Touchpad swipe navigation"
+msgstr "터치패드 스와이프 탐색"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr "터치패드에서 두 손가락으로 가로로 밀어 뒤로 가거나 앞으로 이동합니다."
+
+msgid "Top songs & Friends"
+msgstr "인기 곡 및 친구"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast 펄스"
+
+msgid "More from artist"
+msgstr "아티스트의 다른 곡"
+
+msgid "More quick access"
+msgstr "더 많은 빠른 액세스"
+
+msgid "Customize home"
+msgstr "홈 맞춤설정"
+
+msgid "Lock layout"
+msgstr "레이아웃 잠그기"
+
+msgid "Reset"
+msgstr "초기화"
+
+msgid "Drag to reorder"
+msgstr "드래그하여 순서 변경"
+
+msgid "Explicit"
+msgstr "성인"
+
+msgid "Today"
+msgstr "오늘"
+
+msgid "All time"
+msgstr "전체 기간"
+
+msgid "Nothing new yet"
+msgstr "아직 새 소식이 없습니다"
+
+msgid "What's New"
+msgstr "새로운 소식"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "팔로우하는 아티스트와 팟캐스트의 최신 릴리스입니다."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "팔로우하는 아티스트와 프로그램의 새 음악 및 팟캐스트 에피소드가 여기에 표시됩니다."
+
+#, rust-format
+msgid "{time} left"
+msgstr "{time} 남음"
+
+msgid "Play all"
+msgstr "모두 재생"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify 인기도 및 발매 연도"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "이 기기의 Spotifast 재생 횟수"
+
+msgid "Activity"
+msgstr "활동"
+
+msgid "All time (this device)"
+msgstr "전체 기간(이 기기)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "새 팔로워 (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "감상 기록의 재생 횟수"
+
+msgid "Scroll left"
+msgstr "왼쪽으로 스크롤"
+
+msgid "Scroll right"
+msgstr "오른쪽으로 스크롤"
+
+msgid "Today (all songs)"
+msgstr "오늘(모든 곡)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "총 팔로워: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "새 곡 {count}개 • 총 {total}트랙"
+
+msgid "Private session enabled for 6 hours"
+msgstr "비공개 세션이 6시간 동안 활성화되었습니다"
+
+msgid "Private session ended"
+msgstr "비공개 세션이 종료되었습니다"
+
+msgid "Private session"
+msgstr "비공개 세션"
+
+msgid "End private session"
+msgstr "비공개 세션 종료"
+
+msgid "Profile"
+msgstr "프로필"
+
+msgid "Public playlists"
+msgstr "공개 플레이리스트"
+
+msgid "Recently played artists"
+msgstr "최근 재생한 아티스트"
+
+msgid "Recently listened"
+msgstr "최근 감상"
+
+msgid "No public playlists"
+msgstr "공개 플레이리스트 없음"
+
+msgid "This profile has no public playlists yet."
+msgstr "이 프로필에는 아직 공개 플레이리스트가 없습니다."
+
+msgid "You"
+msgstr "나"
+
+#, rust-format
+msgid "{count} following"
+msgstr "팔로잉 {count}명"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "공개 플레이리스트 {count}개"
+
+msgid "No activity yet"
+msgstr "아직 활동이 없습니다"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "새 팔로워와 플레이리스트에 추가된 곡이 여기에 표시됩니다."
+
+msgid "This week"
+msgstr "이번 주"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "월요일부터 일요일까지. 전체 기간을 보려면 클릭하세요."
+
+msgid "Click to show this week."
+msgstr "이번 주를 보려면 클릭하세요."
+
+msgid "Last 7 days"
+msgstr "최근 7일"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "최근 7일간의 감상 기록으로 계산합니다."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Spotify에서 한 번 페어링"
 

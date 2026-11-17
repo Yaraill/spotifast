@@ -4231,6 +4231,217 @@ msgstr ""
 "Fadet het volume vloeiend uit aan het einde van een nummer en in bij het "
 "volgende."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "Zijbalk inklappen (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "Zijbalk inklappen (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "Muziek"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "Top"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "Pil"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "Breed"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "Klassiek"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "Levendig"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "Gebalanceerd"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "Live radio"
+
+msgid "Player bar style"
+msgstr "Stijl van de spelerbalk"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr ""
+"Kies een zwevende pil, een afgeronde balk of de klassieke indeling van rand tot rand."
+
+msgid "Album colour intensity"
+msgstr "Kleurintensiteit van albumhoes"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr ""
+"Bepaal hoe sterk de huidige hoes oppervlakken en accenten kleurt."
+
+msgid "Touchpad swipe navigation"
+msgstr "Navigeren via touchpad-vegen"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr ""
+"Veeg horizontaal met twee vingers op een touchpad om terug of vooruit te gaan."
+
+msgid "Top songs & Friends"
+msgstr "Topnummers & Vrienden"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast-puls"
+
+msgid "More from artist"
+msgstr "Meer van artiest"
+
+msgid "More quick access"
+msgstr "Meer snelle toegang"
+
+msgid "Customize home"
+msgstr "Startpagina aanpassen"
+
+msgid "Lock layout"
+msgstr "Indeling vergrendelen"
+
+msgid "Reset"
+msgstr "Herstellen"
+
+msgid "Drag to reorder"
+msgstr "Sleep om te herschikken"
+
+msgid "Explicit"
+msgstr "Expliciet"
+
+msgid "Today"
+msgstr "Vandaag"
+
+msgid "All time"
+msgstr "Altijd"
+
+msgid "Nothing new yet"
+msgstr "Nog niets nieuws"
+
+msgid "What's New"
+msgstr "Nieuw"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "De nieuwste releases van artiesten en podcasts die je volgt."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "Nieuwe muziek en podcastafleveringen van artiesten en shows die je volgt verschijnen hier."
+
+#, rust-format
+msgid "{time} left"
+msgstr "Nog {time}"
+
+msgid "Play all"
+msgstr "Alles afspelen"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify-populariteit en jaar van uitgave"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "Je weergaven in Spotifast op dit apparaat"
+
+msgid "Activity"
+msgstr "Activiteit"
+
+msgid "All time (this device)"
+msgstr "Altijd (dit apparaat)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "Nieuwe volgers (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "Weergaven in je luistergeschiedenis"
+
+msgid "Scroll left"
+msgstr "Naar links scrollen"
+
+msgid "Scroll right"
+msgstr "Naar rechts scrollen"
+
+msgid "Today (all songs)"
+msgstr "Vandaag (alle nummers)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "Totaal aantal volgers: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "{count} nieuwe nummers • {total} nummers"
+
+msgid "Private session enabled for 6 hours"
+msgstr "Privésessie ingeschakeld voor 6 uur"
+
+msgid "Private session ended"
+msgstr "Privésessie beëindigd"
+
+msgid "Private session"
+msgstr "Privésessie"
+
+msgid "End private session"
+msgstr "Privésessie beëindigen"
+
+msgid "Profile"
+msgstr "Profiel"
+
+msgid "Public playlists"
+msgstr "Openbare playlists"
+
+msgid "Recently played artists"
+msgstr "Recent beluisterde artiesten"
+
+msgid "Recently listened"
+msgstr "Recent beluisterd"
+
+msgid "No public playlists"
+msgstr "Geen openbare playlists"
+
+msgid "This profile has no public playlists yet."
+msgstr "Dit profiel heeft nog geen openbare playlists."
+
+msgid "You"
+msgstr "Jij"
+
+#, rust-format
+msgid "{count} following"
+msgstr "{count} volgend"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} openbare playlist"
+msgstr[1] "{count} openbare playlists"
+
+msgid "No activity yet"
+msgstr "Nog geen activiteit"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "Nieuwe volgers en nummers die aan je playlists zijn toegevoegd verschijnen hier."
+
+msgid "This week"
+msgstr "Deze week"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "Maandag t/m zondag. Klik om alles te tonen."
+
+msgid "Click to show this week."
+msgstr "Klik om deze week te tonen."
+
+msgid "Last 7 days"
+msgstr "Afgelopen 7 dagen"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "Berekend uit wat je de afgelopen 7 dagen hebt beluisterd."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Eenmalig koppelen in Spotify"
 

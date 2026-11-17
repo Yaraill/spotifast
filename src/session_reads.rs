@@ -1153,6 +1153,125 @@ fn profile_from_json(json: &serde_json::Value) -> UserProfile {
     }
 }
 
+/// Public playlist entry returned inside Spotify's `user-profile-view` payload.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UserProfilePlaylist {
+    pub id: String,
+    pub uri: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub owner_name: Option<String>,
+    pub followers_count: Option<u64>,
+}
+
+/// Artist entry returned inside `recently_played_artists` of `user-profile-view`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UserProfileArtist {
+    pub id: String,
+    pub uri: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub followers_count: Option<u64>,
+}
+
+/// Expanded user profile for friend and playlist-owner pages.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FullUserProfile {
+    pub id: String,
+    pub uri: String,
+    pub name: Option<String>,
+    pub image_url: Option<String>,
+    pub followers_count: Option<u64>,
+    pub following_count: Option<u64>,
+    pub is_following: Option<bool>,
+    pub public_playlists: Vec<UserProfilePlaylist>,
+    pub recent_artists: Vec<UserProfileArtist>,
+}
+
+/// Reads a user's full public profile, playlists, and recent artists over the playback session.
+pub async fn full_user_profile(
+    session: &Session,
+    user_id: &str,
+) -> Result<FullUserProfile, Failure> {
+    let bytes = session
+        .spclient()
+        .get_user_profile(user_id, Some(24), Some(12))
+        .await
+        .map_err(refused)?;
+    let json: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| Failure::Retry(error.into()))?;
+    Ok(full_profile_from_json(user_id, &json))
+}
+
+pub(crate) fn full_profile_from_json(user_id: &str, json: &serde_json::Value) -> FullUserProfile {
+    let basic = profile_from_json(json);
+    let text = |obj: &serde_json::Value, key: &str| {
+        obj.get(key)
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    let tail_id = |uri: &str| {
+        uri.rsplit(':')
+            .next()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let uri = text(json, "uri").unwrap_or_else(|| format!("spotify:user:{user_id}"));
+    let public_playlists = json
+        .get("public_playlists")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let pl_uri = text(item, "uri")?;
+            let id = tail_id(&pl_uri)?;
+            let name = text(item, "name").unwrap_or_else(|| id.clone());
+            let raw_img = text(item, "image_url");
+            let img = raw_img.as_deref().and_then(image_url);
+            Some(UserProfilePlaylist {
+                id,
+                uri: pl_uri,
+                name,
+                image_url: img.or(raw_img),
+                owner_name: text(item, "owner_name"),
+                followers_count: item.get("followers_count").and_then(|v| v.as_u64()),
+            })
+        })
+        .collect();
+    let recent_artists = json
+        .get("recently_played_artists")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let ar_uri = text(item, "uri")?;
+            let id = tail_id(&ar_uri)?;
+            let name = text(item, "name").unwrap_or_else(|| id.clone());
+            let raw_img = text(item, "image_url");
+            let img = raw_img.as_deref().and_then(image_url);
+            Some(UserProfileArtist {
+                id,
+                uri: ar_uri,
+                name,
+                image_url: img.or(raw_img),
+                followers_count: item.get("followers_count").and_then(|v| v.as_u64()),
+            })
+        })
+        .collect();
+    FullUserProfile {
+        id: user_id.to_owned(),
+        uri,
+        name: basic.name,
+        image_url: basic.image_url,
+        followers_count: json.get("followers_count").and_then(|v| v.as_u64()),
+        following_count: json.get("following_count").and_then(|v| v.as_u64()),
+        is_following: json.get("is_following").and_then(|v| v.as_bool()),
+        public_playlists,
+        recent_artists,
+    }
+}
+
 /// What one friend is listening to, or last played, with names to show.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FriendActivity {
@@ -2415,6 +2534,51 @@ mod tests {
 
         let json: serde_json::Value = serde_json::from_str("{}").unwrap();
         assert_eq!(profile_from_json(&json), UserProfile::default());
+    }
+
+    #[test]
+    fn full_profile_reads_playlists_and_recent_artists() {
+        let json: serde_json::Value = serde_json::from_str(
+            r#"{
+                "uri": "spotify:user:alice",
+                "name": "Alice",
+                "image_url": "https://i.scdn.co/image/avatar",
+                "followers_count": 42,
+                "following_count": 15,
+                "is_following": true,
+                "public_playlists": [
+                    {
+                        "uri": "spotify:user:alice:playlist:pl123",
+                        "name": "Night Mix",
+                        "image_url": "spotify:image:ab12",
+                        "owner_name": "Alice",
+                        "followers_count": 9
+                    }
+                ],
+                "recently_played_artists": [
+                    {
+                        "uri": "spotify:artist:ar456",
+                        "name": "Nujabes",
+                        "image_url": "https://i.scdn.co/image/nujabes",
+                        "followers_count": 1000
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let full = full_profile_from_json("alice", &json);
+        assert_eq!(full.name.as_deref(), Some("Alice"));
+        assert_eq!(full.followers_count, Some(42));
+        assert_eq!(full.following_count, Some(15));
+        assert_eq!(full.is_following, Some(true));
+        assert_eq!(full.public_playlists.len(), 1);
+        assert_eq!(full.public_playlists[0].id, "pl123");
+        assert_eq!(
+            full.public_playlists[0].image_url.as_deref(),
+            Some("https://i.scdn.co/image/ab12")
+        );
+        assert_eq!(full.recent_artists.len(), 1);
+        assert_eq!(full.recent_artists[0].id, "ar456");
     }
 
     #[test]

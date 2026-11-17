@@ -12,10 +12,9 @@ use crate::util;
 use super::widgets::{PlaylistChecks, SliderEvent, thin_slider};
 
 /// How much of the playing art's tint the bar's fill carries.
-const TINT_STRENGTH: f32 = 0.12;
+const TINT_STRENGTH: f32 = 0.16;
 /// How long the bar takes to cross over to a new song's tint.
 const TINT_FADE_SECONDS: f32 = 0.45;
-const TINT_SESSION_ID: &str = "player-bar-tint-session";
 /// The playlist checklist a liked song's heart opens.
 const LIKED_POPUP_ID: &str = "player-bar-liked-playlists";
 /// How strongly the visualizer shows through behind the controls: the
@@ -40,38 +39,84 @@ const SPECTRUM_GAP: f32 = 2.0;
 
 /// Forget this bar's animation session while the sign-in screen is shown.
 pub(crate) fn end_tint_session(ctx: &egui::Context) {
-    ctx.data_mut(|data| data.remove::<u64>(egui::Id::new(TINT_SESSION_ID)));
+    theme::end_tint_session(ctx);
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
+    let saved_palette = app.begin_effective_palette(ui);
     let palette = app.palette;
-    let fill = eased_fill(ui.ctx(), palette.panel, app.now_playing_tint());
+    let tint = app.resolved_now_playing_tint();
+    let style = app.settings.player_bar_style;
+    let classic = style == crate::settings::PlayerBarStyle::Classic;
+    let pct = if app.settings.accent_from_art {
+        app.settings.tint_intensity.percent()
+    } else {
+        0
+    };
+    let tint_strength = match (classic, palette.dark) {
+        (true, true) => theme::tint_curve(pct, TINT_STRENGTH, 0.36, 0.40),
+        (true, false) => theme::tint_curve(pct, 0.12, 0.22, 0.26),
+        (false, true) => theme::tint_curve(pct, 0.24, 0.44, 0.48),
+        (false, false) => theme::tint_curve(pct, 0.16, 0.26, 0.30),
+    };
+    let fill = eased_fill_with_strength(ui.ctx(), palette.panel, tint, tint_strength);
+    let frame_fill = if classic { fill } else { palette.window };
     egui::Panel::bottom("player-bar")
         .exact_size(theme::PLAYER_BAR_HEIGHT)
         .resizable(false)
         .show_separator_line(false)
-        .frame(
-            Frame::new()
-                .fill(fill)
-                .inner_margin(Margin::symmetric(16, 0)),
-        )
+        .frame(Frame::new().fill(frame_fill).inner_margin(Margin::ZERO))
         .show(ui, |ui| {
-            let rect = ui.max_rect();
+            let outer = ui.max_rect();
+            let (dock, rect, radius) = dock_geometry(outer, style);
             let now = app.now_playing();
-            // The whole bar, margins included, behind everything else.
-            let behind = rect.expand2(vec2(16.0, 0.0));
-            if visualizer(app, ui, behind, now.as_ref()) {
+            if !classic {
+                let corner = egui::CornerRadius::same(radius.min(127.0) as u8);
+                ui.painter().rect_filled(dock, corner, fill);
+                let border_mix = if palette.dark {
+                    theme::tint_curve(pct, 0.08, 0.28, 0.34)
+                } else {
+                    theme::tint_curve(pct, 0.06, 0.22, 0.26)
+                };
+                let target_border = match tint {
+                    Some(art) if border_mix > 0.0 => {
+                        theme::Palette::blend_color(palette.outline, art, border_mix)
+                    }
+                    _ => palette.outline,
+                };
+                let border = theme::ease_color(
+                    ui.ctx(),
+                    egui::Id::new("player-bar-border"),
+                    target_border,
+                    TINT_FADE_SECONDS,
+                );
+                ui.painter().rect_stroke(
+                    dock,
+                    corner,
+                    egui::Stroke::new(1.0, border),
+                    egui::StrokeKind::Inside,
+                );
+            } else {
+                ui.painter().hline(
+                    outer.x_range(),
+                    outer.top() + 0.5,
+                    egui::Stroke::new(1.0, palette.outline),
+                );
+            }
+            let vis_rect = if classic {
+                dock
+            } else {
+                dock.shrink2(vec2((radius * 0.45).max(2.0), 2.0))
+            };
+            if visualizer(app, ui, vis_rect, now.as_ref()) {
                 theme::visualiser_frame(ui.ctx(), app.visualiser_fps());
             }
             // Its empty space is the visualizer's control, as Winamp's
             // visualizer was: a click moves to the next mode. The controls
             // drawn after it take their own clicks.
             if app.settings.player_bar_vis_click && app.visualizers_available() {
-                let empty = ui.interact(
-                    behind,
-                    ui.id().with("player-bar-visualizer"),
-                    Sense::click(),
-                );
+                let empty =
+                    ui.interact(outer, ui.id().with("player-bar-visualizer"), Sense::click());
                 // An open tooltip stays while the pointer is inside its widget's
                 // rect, and this one spans the bar: offer it only while the empty
                 // space itself is hovered, not the controls over it.
@@ -87,11 +132,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     app.actions.push(Action::CyclePlayerBarVis);
                 }
             }
-            ui.painter().hline(
-                rect.x_range(),
-                rect.top() + 0.5,
-                egui::Stroke::new(1.0, palette.outline),
-            );
             let width = rect.width();
             let side = (width * 0.3).clamp(200.0, 420.0);
             let cy = rect.center().y;
@@ -118,6 +158,32 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let transport_right = center.center().x + transport_width() / 2.0;
             extras(app, &mut right_ui, now.as_ref(), transport_right);
         });
+    app.end_effective_palette(saved_palette);
+}
+
+fn dock_geometry(outer: Rect, style: crate::settings::PlayerBarStyle) -> (Rect, Rect, f32) {
+    match style {
+        crate::settings::PlayerBarStyle::Pill => {
+            let max_w = (outer.width() - 28.0).max(outer.width().min(200.0));
+            let dock_w = max_w.clamp(outer.width().min(320.0), 1240.0);
+            let dock_h = (outer.height() - 12.0).max(56.0);
+            let dock = Rect::from_center_size(outer.center(), vec2(dock_w, dock_h));
+            (dock, dock.shrink2(vec2(12.0, 0.0)), 24.0)
+        }
+        crate::settings::PlayerBarStyle::Wide => {
+            let gap = theme::FLOATING_GAP;
+            let dock = Rect::from_min_max(
+                pos2(outer.left() + gap, outer.top() + 3.0),
+                pos2(outer.right() - gap, outer.bottom() - gap),
+            );
+            (
+                dock,
+                dock.shrink2(vec2(12.0, 0.0)),
+                f32::from(theme::FLOATING_RADIUS),
+            )
+        }
+        crate::settings::PlayerBarStyle::Classic => (outer, outer.shrink2(vec2(16.0, 0.0)), 0.0),
+    }
 }
 
 /// Draws the chosen spectrum or waveform of the song playing on this
@@ -392,29 +458,19 @@ fn waveform(
 
 /// Ease the final fill's RGB. Untinted custom panels keep their alpha while
 /// the colour returns to the panel colour.
+#[cfg(test)]
 fn eased_fill(ctx: &egui::Context, panel: Color32, tint: Option<Color32>) -> Color32 {
-    let target = tint.map_or(panel, |tint| super::blend(panel, tint, TINT_STRENGTH));
-    // Color32 stores premultiplied RGB, so interpolate unmultiplied channels.
-    let [r, g, b, _] = target.to_srgba_unmultiplied();
-    // A new pass after sign-out gets new ids without clearing other animations.
-    let pass = ctx.cumulative_pass_nr();
-    let session = ctx.data_mut(|data| {
-        *data.get_temp_mut_or_insert_with(egui::Id::new(TINT_SESSION_ID), || pass)
-    });
-    let channel = |axis: &'static str, value: u8| {
-        ctx.animate_value_with_time(
-            egui::Id::new(("player-bar-tint", session, axis)),
-            f32::from(value),
-            crate::motion::seconds(ctx, TINT_FADE_SECONDS),
-        )
-        .round() as u8
-    };
-    let eased = [channel("r", r), channel("g", g), channel("b", b)];
-    if eased == [r, g, b] {
-        target
-    } else {
-        Color32::from_rgba_unmultiplied(eased[0], eased[1], eased[2], target.a())
-    }
+    eased_fill_with_strength(ctx, panel, tint, TINT_STRENGTH)
+}
+
+fn eased_fill_with_strength(
+    ctx: &egui::Context,
+    panel: Color32,
+    tint: Option<Color32>,
+    strength: f32,
+) -> Color32 {
+    let target = tint.map_or(panel, |tint| super::blend(panel, tint, strength));
+    theme::ease_color(ctx, egui::Id::new("player-bar-tint"), target, TINT_FADE_SECONDS)
 }
 
 fn now_playing_block(app: &mut App, ui: &mut egui::Ui, region: Rect, now: Option<&NowPlaying>) {
@@ -479,7 +535,9 @@ fn now_playing_block(app: &mut App, ui: &mut egui::Ui, region: Rect, now: Option
         pos2(cover_rect.right() - 10.0, cover_rect.top() + 10.0),
         Vec2::splat(18.0),
     );
-    let offer_expand = art_available && !app.settings.art_expanded && app.settings.sidebar_visible;
+    let offer_expand = art_available
+        && !app.settings.art_expanded
+        && app.settings.effective_sidebar_mode() == crate::settings::SidebarMode::Expanded;
     let over_expand = offer_expand && ui.rect_contains_pointer(expand_rect);
     if cover_response.clicked() && !over_expand {
         if let Some(id) = &now.album_id {
@@ -806,13 +864,24 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
     }
 
     let disc = slot(widths[2]);
+    let use_accent = app.settings.accent_from_art && app.settings.tint_intensity.percent() > 0;
+    let (disc_fill, disc_hover, disc_glyph) = if use_accent {
+        (palette.accent, palette.accent_hover, palette.on_accent)
+    } else {
+        let hover = if palette.dark {
+            egui::Color32::WHITE
+        } else {
+            palette.text
+        };
+        (palette.text, hover, palette.window)
+    };
     if loading || app.any_play_pending() {
         let mut cell = centered(ui, disc);
         theme::circle_spinner(
             &mut cell,
             36.0,
-            palette.text,
-            palette.window,
+            disc_fill,
+            disc_glyph,
             &gettext(app.locale, "Loading…"),
         );
     } else {
@@ -821,19 +890,14 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         } else {
             Icon::PlayFilled
         };
-        let hover = if palette.dark {
-            egui::Color32::WHITE
-        } else {
-            palette.text
-        };
         let mut cell = centered(ui, disc);
         if theme::circle_button(
             &mut cell,
             icon,
             36.0,
-            palette.text,
-            hover,
-            palette.window,
+            disc_fill,
+            disc_hover,
+            disc_glyph,
             &if playing {
                 gettext(app.locale, "Pause")
             } else {
@@ -1326,5 +1390,33 @@ mod player_bar_tint_tests {
     fn the_full_screen_button_goes_when_the_bar_is_tight() {
         assert!(full_screen_button_fits(320.0));
         assert!(!full_screen_button_fits(200.0));
+    }
+
+    #[test]
+    fn dock_geometry_matches_each_bar_style() {
+        use crate::settings::PlayerBarStyle;
+        let outer = Rect::from_min_max(pos2(0.0, 0.0), pos2(1440.0, theme::PLAYER_BAR_HEIGHT));
+
+        let (pill_dock, pill_content, pill_radius) = dock_geometry(outer, PlayerBarStyle::Pill);
+        assert_eq!(pill_radius, 24.0);
+        assert_eq!(pill_dock.width(), 1240.0);
+        assert!((pill_dock.center().x - outer.center().x).abs() < 0.01);
+        assert!(pill_content.width() < pill_dock.width());
+
+        let narrow = Rect::from_min_max(pos2(0.0, 0.0), pos2(900.0, theme::PLAYER_BAR_HEIGHT));
+        let (narrow_dock, _, _) = dock_geometry(narrow, PlayerBarStyle::Pill);
+        assert_eq!(narrow_dock.width(), 900.0 - 28.0);
+
+        let (wide_dock, wide_content, wide_radius) = dock_geometry(outer, PlayerBarStyle::Wide);
+        assert_eq!(wide_radius, f32::from(theme::FLOATING_RADIUS));
+        assert_eq!(wide_dock.left(), theme::FLOATING_GAP);
+        assert_eq!(wide_dock.right(), outer.right() - theme::FLOATING_GAP);
+        assert!(wide_content.width() < wide_dock.width());
+
+        let (classic_dock, classic_content, classic_radius) =
+            dock_geometry(outer, PlayerBarStyle::Classic);
+        assert_eq!(classic_radius, 0.0);
+        assert_eq!(classic_dock, outer);
+        assert_eq!(classic_content, outer.shrink2(vec2(16.0, 0.0)));
     }
 }

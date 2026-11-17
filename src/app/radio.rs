@@ -96,7 +96,7 @@ impl App {
     }
 
     /// Asks for the seed's songs unless the page already has or awaits them.
-    pub(super) fn load_radio(&mut self, seed: &str) {
+    pub(crate) fn load_radio(&mut self, seed: &str) {
         let name = self.radio_name(seed);
         let images = self.radio_images(seed);
         let page = self.radio_pages.entry(seed.to_string()).or_default();
@@ -140,6 +140,18 @@ impl App {
         true
     }
 
+    /// Starts playing Home Live Radio from `uris` and marks `seed` as the active home station.
+    pub(crate) fn play_home_radio_uris(&mut self, seed: &str, uris: Vec<String>) {
+        if uris.is_empty() {
+            return;
+        }
+        let (uris, index) = cap_uris(&uris, 0);
+        self.pending_home_radio_play = None;
+        let request = PlayRequest::tracks(uris).starting_at_index(index);
+        self.play_request(request, false);
+        self.active_home_radio_seed = Some(seed.to_string());
+    }
+
     pub(super) fn receive_radio(
         &mut self,
         seed: &str,
@@ -156,7 +168,7 @@ impl App {
         let refreshing = std::mem::take(&mut page.refreshing);
         match result {
             Ok(songs) => {
-                let uris = songs.iter().map(|track| track.uri.clone()).collect();
+                let uris: Vec<String> = songs.iter().map(|track| track.uri.clone()).collect();
                 for track in &songs {
                     if let Some(id) = &track.id {
                         self.track_cache
@@ -164,15 +176,46 @@ impl App {
                             .or_insert_with(|| track.clone());
                     }
                 }
+                let play_order = if self
+                    .pending_home_radio_play
+                    .as_ref()
+                    .is_some_and(|(pending_seed, _)| pending_seed == seed)
+                {
+                    let (_, start_uri) = self.pending_home_radio_play.take().expect("checked");
+                    Some(build_home_radio_uris(&songs, start_uri.as_deref()))
+                } else {
+                    None
+                };
                 page.songs = Loadable::Loaded(songs);
                 // The table's cached rows follow the new songs.
                 self.load_generation = self.load_generation.wrapping_add(1);
                 page.generation = self.load_generation;
                 self.request_contains(uris);
+                if let Some(play_uris) = play_order {
+                    self.play_home_radio_uris(seed, play_uris);
+                }
             }
             // A failed refresh keeps the mix on screen and says why.
-            Err(error) if refreshing => self.toast(error),
-            Err(error) => page.songs = Loadable::Failed(error),
+            Err(error) if refreshing => {
+                if self
+                    .pending_home_radio_play
+                    .as_ref()
+                    .is_some_and(|(pending_seed, _)| pending_seed == seed)
+                {
+                    self.pending_home_radio_play = None;
+                }
+                self.toast(error);
+            }
+            Err(error) => {
+                if self
+                    .pending_home_radio_play
+                    .as_ref()
+                    .is_some_and(|(pending_seed, _)| pending_seed == seed)
+                {
+                    self.pending_home_radio_play = None;
+                }
+                page.songs = Loadable::Failed(error);
+            }
         }
     }
 

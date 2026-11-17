@@ -361,6 +361,7 @@ pub fn populate(app: &mut App) {
         product: Some("premium".into()),
         country: Some("DE".into()),
         uri: Some("spotify:user:demo".into()),
+        followers: None,
     });
 
     let playlists: Vec<Playlist> = (0..PLAYLISTS.len()).map(playlist).collect();
@@ -653,16 +654,18 @@ pub fn populate(app: &mut App) {
     app.home.top_tracks_by_period = [
         Loadable::Loaded(top_preview.clone()),
         Loadable::Loaded(top_preview.clone()),
+        Loadable::Loaded(top_preview.clone()),
         Loadable::Loaded(top_preview),
     ];
     app.home.top_songs = Loadable::Loaded(top_all.clone());
     app.home.top_songs_by_period = [
         Loadable::Loaded(top_all.clone()),
         Loadable::Loaded(top_all.clone()),
+        Loadable::Loaded(top_all.clone()),
         Loadable::Loaded(top_all),
     ];
     app.home.top_songs_complete = true;
-    app.home.top_songs_by_period_complete = [true, true, true];
+    app.home.top_songs_by_period_complete = [true, true, true, true];
     app.home.recommendations = Loadable::Loaded(tracks.iter().skip(20).take(10).cloned().collect());
     app.home.made_for_you = Loadable::Loaded(playlists.iter().take(10).cloned().collect());
     app.home.top_mixes = Loadable::Loaded((0..TOP_MIXES.len()).map(top_mix).collect());

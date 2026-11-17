@@ -4080,6 +4080,213 @@ msgstr "淡入淡出 (Crossfade)"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "在曲目結束時平滑降低音量，並在下一首曲目開始時漸強。"
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "摺疊側邊欄 (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "摺疊側邊欄 (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "音樂"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "熱門"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "膠囊"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "寬列"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "經典"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "鮮明"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "均衡"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "即時電台"
+
+msgid "Player bar style"
+msgstr "播放列樣式"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr "選擇懸浮膠囊、圓角列或經典滿版配置。"
+
+msgid "Album colour intensity"
+msgstr "專輯色彩強度"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr "控制目前播放封面對背景表面與強調色的著色強度。"
+
+msgid "Touchpad swipe navigation"
+msgstr "觸控板滑動導覽"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr "在觸控板上以雙指水平滑動來返回或前進。"
+
+msgid "Top songs & Friends"
+msgstr "熱門歌曲與好友"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast 脈動"
+
+msgid "More from artist"
+msgstr "更多藝人曲目"
+
+msgid "More quick access"
+msgstr "更多快速存取"
+
+msgid "Customize home"
+msgstr "自訂首頁"
+
+msgid "Lock layout"
+msgstr "鎖定版面"
+
+msgid "Reset"
+msgstr "重設"
+
+msgid "Drag to reorder"
+msgstr "拖曳以重新排序"
+
+msgid "Explicit"
+msgstr "兒童不宜"
+
+msgid "Today"
+msgstr "今天"
+
+msgid "All time"
+msgstr "所有時間"
+
+msgid "Nothing new yet"
+msgstr "尚無新內容"
+
+msgid "What's New"
+msgstr "最新消息"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "你關注的藝人和 Podcast 的最新發行內容。"
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "你關注的藝人和節目的新音樂與 Podcast 單集將會顯示在這裡。"
+
+#, rust-format
+msgid "{time} left"
+msgstr "剩餘 {time}"
+
+msgid "Play all"
+msgstr "全部播放"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify 熱門度與發行年份"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "你在此裝置上的 Spotifast 播放次數"
+
+msgid "Activity"
+msgstr "動態"
+
+msgid "All time (this device)"
+msgstr "所有時間（此裝置）"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "新增粉絲 (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "收聽紀錄中的播放次數"
+
+msgid "Scroll left"
+msgstr "向左捲動"
+
+msgid "Scroll right"
+msgstr "向右捲動"
+
+msgid "Today (all songs)"
+msgstr "今天（全部歌曲）"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "粉絲總數：{total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "{count} 首新歌 • 共 {total} 首"
+
+msgid "Private session enabled for 6 hours"
+msgstr "私人工作階段已開啟，持續 6 小時"
+
+msgid "Private session ended"
+msgstr "私人工作階段已結束"
+
+msgid "Private session"
+msgstr "私人工作階段"
+
+msgid "End private session"
+msgstr "結束私人工作階段"
+
+msgid "Profile"
+msgstr "個人檔案"
+
+msgid "Public playlists"
+msgstr "公開播放清單"
+
+msgid "Recently played artists"
+msgstr "最近播放的藝人"
+
+msgid "Recently listened"
+msgstr "最近聆聽"
+
+msgid "No public playlists"
+msgstr "沒有公開播放清單"
+
+msgid "This profile has no public playlists yet."
+msgstr "此個人檔案尚未有公開播放清單。"
+
+msgid "You"
+msgstr "你"
+
+#, rust-format
+msgid "{count} following"
+msgstr "正在關注 {count}"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} 個公開播放清單"
+
+msgid "No activity yet"
+msgstr "尚無動態"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "新的追蹤者以及新增到你播放清單的歌曲將顯示在這裡。"
+
+msgid "This week"
+msgstr "本週"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "週一至週日。點擊顯示全部時間。"
+
+msgid "Click to show this week."
+msgstr "點擊顯示本週。"
+
+msgid "Last 7 days"
+msgstr "最近 7 天"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "根據你最近 7 天的收聽記錄計算。"
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. 在 Spotify 中配對一次"
 

@@ -25,6 +25,8 @@ const TOP_MIXES: &str = "spotify:section:0JQ5DAnM3wGh0gz1MXnu89";
 const QUERY_HASH: &str = "eb3fba2d388cf4fc4d696b1757a58584e9538a3b515ea742e9cc9465807340be";
 // Spotify DJ is a special context that librespot cannot play as a playlist.
 pub(crate) const UNSUPPORTED_DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
+/// Official Spotify Daylist playlist ID, rotated multiple times daily per account.
+pub const DAYLIST_ID: &str = "37i9dQZF1EP6YuccBxUcC1";
 const CACHE_AGE: Duration = Duration::from_secs(600);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const PAGE_SIZE: usize = 20;
@@ -191,8 +193,16 @@ impl MadeForYou {
                 wait.as_secs()
             );
         }
+        let mut made_for_you = made_for_you.map_err(SectionError::into_api)?;
+        if !made_for_you
+            .iter()
+            .any(|playlist| playlist.id == DAYLIST_ID)
+            && let Ok(daylist) = crate::session_reads::playlist(session, DAYLIST_ID).await
+        {
+            made_for_you.insert(0, daylist);
+        }
         let shelves = Shelves {
-            made_for_you: made_for_you.map_err(SectionError::into_api)?,
+            made_for_you,
             top_mixes: top_mixes.map_err(SectionError::into_api),
         };
         state.cached = Some((Instant::now(), shelves.clone()));

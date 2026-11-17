@@ -4199,6 +4199,213 @@ msgstr "クロスフェード"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "曲の終わりで音量を滑らかに下げ、次の曲で徐々に上げます。"
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "サイドバーを折りたたむ (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "サイドバーを折りたたむ (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "音楽"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "トップ"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "ピル"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "ワイド"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "クラシック"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "鮮やか"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "バランス"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "ライブラジオ"
+
+msgid "Player bar style"
+msgstr "プレーヤーバーのスタイル"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr "フローティングピル、角丸バー、または従来の端から端までのレイアウトから選択します。"
+
+msgid "Album colour intensity"
+msgstr "アルバムアートの色の濃さ"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr "再生中のジャケット画像が背景やアクセントカラーにどの程度反映されるかを調整します。"
+
+msgid "Touchpad swipe navigation"
+msgstr "タッチパッドのスワイプ操作"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr "タッチパッドを2本指で左右にスワイプして戻ったり進んだりします。"
+
+msgid "Top songs & Friends"
+msgstr "トップソングとフレンド"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast パルス"
+
+msgid "More from artist"
+msgstr "アーティストの人気曲"
+
+msgid "More quick access"
+msgstr "その他のクイックアクセス"
+
+msgid "Customize home"
+msgstr "ホームをカスタマイズ"
+
+msgid "Lock layout"
+msgstr "レイアウトをロック"
+
+msgid "Reset"
+msgstr "リセット"
+
+msgid "Drag to reorder"
+msgstr "ドラッグして並び替え"
+
+msgid "Explicit"
+msgstr "露骨"
+
+msgid "Today"
+msgstr "今日"
+
+msgid "All time"
+msgstr "全期間"
+
+msgid "Nothing new yet"
+msgstr "新着はまだありません"
+
+msgid "What's New"
+msgstr "最新情報"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "フォロー中のアーティストやポッドキャストの最新リリースです。"
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "フォロー中のアーティストや番組の新しい音楽やポッドキャストエピソードがここに表示されます。"
+
+#, rust-format
+msgid "{time} left"
+msgstr "残り {time}"
+
+msgid "Play all"
+msgstr "すべて再生"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotifyの人気度とリリース年"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "このデバイスのSpotifastでの再生回数"
+
+msgid "Activity"
+msgstr "アクティビティ"
+
+msgid "All time (this device)"
+msgstr "全期間（このデバイス）"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "新しいフォロワー (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "再生履歴での再生回数"
+
+msgid "Scroll left"
+msgstr "左にスクロール"
+
+msgid "Scroll right"
+msgstr "右にスクロール"
+
+msgid "Today (all songs)"
+msgstr "今日（すべての曲）"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "合計フォロワー: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "新曲 {count} 曲 • 合計 {total} 曲"
+
+msgid "Private session enabled for 6 hours"
+msgstr "プライベートセッションを6時間有効にしました"
+
+msgid "Private session ended"
+msgstr "プライベートセッションを終了しました"
+
+msgid "Private session"
+msgstr "プライベートセッション"
+
+msgid "End private session"
+msgstr "プライベートセッションを終了"
+
+msgid "Profile"
+msgstr "プロフィール"
+
+msgid "Public playlists"
+msgstr "公開プレイリスト"
+
+msgid "Recently played artists"
+msgstr "最近再生したアーティスト"
+
+msgid "Recently listened"
+msgstr "最近の再生"
+
+msgid "No public playlists"
+msgstr "公開プレイリストはありません"
+
+msgid "This profile has no public playlists yet."
+msgstr "このプロフィールにはまだ公開プレイリストがありません。"
+
+msgid "You"
+msgstr "あなた"
+
+#, rust-format
+msgid "{count} following"
+msgstr "{count} フォロー中"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "公開プレイリスト {count} 件"
+
+msgid "No activity yet"
+msgstr "アクティビティはまだありません"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "新しいフォロワーやプレイリストに追加された曲がここに表示されます。"
+
+msgid "This week"
+msgstr "今週"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "月曜日から日曜日まで。クリックして全期間を表示します。"
+
+msgid "Click to show this week."
+msgstr "クリックして今週を表示します。"
+
+msgid "Last 7 days"
+msgstr "過去7日間"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "過去7日間の再生履歴から算出しています。"
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Spotifyで初回ペアリング"
 

@@ -4260,6 +4260,218 @@ msgstr "Кросфейд"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "Плавно зменшує гучність наприкінці треку та підвищує на початку наступного."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "Згорнути бічну панель (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "Згорнути бічну панель (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "Музика"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "Топ"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "Капсула"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "Широка"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "Класична"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "Насичений"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "Збалансований"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "Живе радіо"
+
+msgid "Player bar style"
+msgstr "Стиль панелі плеєра"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr ""
+"Виберіть плавучу капсулу, заокруглену панель або класичне розташування на всю ширину."
+
+msgid "Album colour intensity"
+msgstr "Інтенсивність кольору обкладинки"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr ""
+"Керує тим, наскільки сильно поточна обкладинка забарвлює поверхні та акценти."
+
+msgid "Touchpad swipe navigation"
+msgstr "Навігація жестами на тачпаді"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr ""
+"Проведіть двома пальцями горизонтально на тачпаді, щоб повернутися назад або вперед."
+
+msgid "Top songs & Friends"
+msgstr "Найпопулярніші пісні та Друзі"
+
+msgid "Spotifast pulse"
+msgstr "Пульс Spotifast"
+
+msgid "More from artist"
+msgstr "Більше від виконавця"
+
+msgid "More quick access"
+msgstr "Більше швидкого доступу"
+
+msgid "Customize home"
+msgstr "Налаштувати головну"
+
+msgid "Lock layout"
+msgstr "Зафіксувати макет"
+
+msgid "Reset"
+msgstr "Скинути"
+
+msgid "Drag to reorder"
+msgstr "Перетягніть для сортування"
+
+msgid "Explicit"
+msgstr "Ненормативний вміст"
+
+msgid "Today"
+msgstr "Сьогодні"
+
+msgid "All time"
+msgstr "За весь час"
+
+msgid "Nothing new yet"
+msgstr "Поки що нічого нового"
+
+msgid "What's New"
+msgstr "Що нового"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "Найновіші релізи виконавців і подкастів, на які ви підписані."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "Нова музика та випуски подкастів від виконавців і шоу, за якими ви стежите, з'являться тут."
+
+#, rust-format
+msgid "{time} left"
+msgstr "Залишилося {time}"
+
+msgid "Play all"
+msgstr "Відтворити все"
+
+msgid "Spotify popularity and release year"
+msgstr "Популярність у Spotify та рік випуску"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "Ваші прослуховування у Spotifast на цьому пристрої"
+
+msgid "Activity"
+msgstr "Активність"
+
+msgid "All time (this device)"
+msgstr "За весь час (цей пристрій)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "Нові підписники (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "Прослуховування у вашій історії"
+
+msgid "Scroll left"
+msgstr "Прокрутити ліворуч"
+
+msgid "Scroll right"
+msgstr "Прокрутити праворуч"
+
+msgid "Today (all songs)"
+msgstr "Сьогодні (усі пісні)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "Усього підписників: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "Нових пісень: {count} • усього {total}"
+
+msgid "Private session enabled for 6 hours"
+msgstr "Приватну сесію ввімкнено на 6 годин"
+
+msgid "Private session ended"
+msgstr "Приватну сесію завершено"
+
+msgid "Private session"
+msgstr "Приватна сесія"
+
+msgid "End private session"
+msgstr "Завершити приватну сесію"
+
+msgid "Profile"
+msgstr "Профіль"
+
+msgid "Public playlists"
+msgstr "Публічні плейлісти"
+
+msgid "Recently played artists"
+msgstr "Нещодавно прослухані виконавці"
+
+msgid "Recently listened"
+msgstr "Нещодавно прослухано"
+
+msgid "No public playlists"
+msgstr "Немає публічних плейлістів"
+
+msgid "This profile has no public playlists yet."
+msgstr "У цьому профілі ще немає публічних плейлістів."
+
+msgid "You"
+msgstr "Ви"
+
+#, rust-format
+msgid "{count} following"
+msgstr "Підписок: {count}"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} публічний плейліст"
+msgstr[1] "{count} публічні плейлісти"
+msgstr[2] "{count} публічних плейлістів"
+
+msgid "No activity yet"
+msgstr "Поки що немає активності"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "Нові підписники та пісні, додані до ваших плейлістів, з’являться тут."
+
+msgid "This week"
+msgstr "Цей тиждень"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "З понеділка по неділю. Натисніть, щоб показати увесь час."
+
+msgid "Click to show this week."
+msgstr "Натисніть, щоб показати цей тиждень."
+
+msgid "Last 7 days"
+msgstr "Останні 7 днів"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "Обчислено за вашими прослуховуваннями за останні 7 днів."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Виконайте сполучення в Spotify один раз"
 

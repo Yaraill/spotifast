@@ -4225,6 +4225,214 @@ msgstr "Çapraz geçiş (Crossfade)"
 msgid "Smoothly fade volume out at the end of a track and in on the next."
 msgstr "Parça sonunda sesi yumuşakça kısar ve sonraki parçada kademeli açar."
 
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr "Kenar çubuğunu daralt (Ctrl+B)"
+
+msgid "Collapse sidebar (Cmd+B)"
+msgstr "Kenar çubuğunu daralt (Cmd+B)"
+
+msgctxt "home filter"
+msgid "Music"
+msgstr "Müzik"
+
+msgctxt "home filter"
+msgid "Top"
+msgstr "En çok"
+
+msgctxt "player bar"
+msgid "Pill"
+msgstr "Hap"
+
+msgctxt "player bar"
+msgid "Wide"
+msgstr "Geniş"
+
+msgctxt "player bar"
+msgid "Classic"
+msgstr "Klasik"
+
+msgctxt "album colour"
+msgid "Vivid"
+msgstr "Baskın"
+
+msgctxt "album colour"
+msgid "Balanced"
+msgstr "Dengeli"
+
+msgctxt "home"
+msgid "Live radio"
+msgstr "Canlı radyo"
+
+msgid "Player bar style"
+msgstr "Çalar çubuğu stili"
+
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr "Yüzen hap, yuvarlatılmış çubuk veya kenardan kenara klasik yerleşim seçin."
+
+msgid "Album colour intensity"
+msgstr "Albüm rengi yoğunluğu"
+
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr "Çalan kapağın yüzeyleri ve vurguları ne kadar güçlü renklendireceğini ayarlayın."
+
+msgid "Touchpad swipe navigation"
+msgstr "Dokunmatik yüzey kaydırma gezinmesi"
+
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr "Geri veya ileri gitmek için dokunmatik yüzeyde iki parmağınızla yatay kaydırın."
+
+msgid "Top songs & Friends"
+msgstr "En popüler şarkılar ve Arkadaşlar"
+
+msgid "Spotifast pulse"
+msgstr "Spotifast nabzı"
+
+msgid "More from artist"
+msgstr "Sanatçıdan daha fazlası"
+
+msgid "More quick access"
+msgstr "Daha fazla hızlı erişim"
+
+msgid "Customize home"
+msgstr "Ana sayfayı özelleştir"
+
+msgid "Lock layout"
+msgstr "Düzeni kilitle"
+
+msgid "Reset"
+msgstr "Sıfırla"
+
+msgid "Drag to reorder"
+msgstr "Sıralamak için sürükle"
+
+msgid "Explicit"
+msgstr "Sansürsüz"
+
+msgid "Today"
+msgstr "Bugün"
+
+msgid "All time"
+msgstr "Tüm zamanlar"
+
+msgid "Nothing new yet"
+msgstr "Henüz yeni bir şey yok"
+
+msgid "What's New"
+msgstr "Güncellemelerin"
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr "Takip ettiğin sanatçıların ve podcast'lerin en son yayınları."
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr "Takip ettiğin sanatçılardan ve programlardan yeni müzikler ve podcast bölümleri burada görünecek."
+
+#, rust-format
+msgid "{time} left"
+msgstr "{time} kaldı"
+
+msgid "Play all"
+msgstr "Tümünü çal"
+
+msgid "Spotify popularity and release year"
+msgstr "Spotify popülerliği ve çıkış yılı"
+
+msgid "Your plays in Spotifast on this device"
+msgstr "Bu cihazda Spotifast'teki dinlemelerin"
+
+msgid "Activity"
+msgstr "Etkinlik"
+
+msgid "All time (this device)"
+msgstr "Tüm zamanlar (bu cihazda)"
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr "Yeni takipçi (+{count})"
+
+msgid "Plays in your listening history"
+msgstr "Dinleme geçmişindeki çalma sayısı"
+
+msgid "Scroll left"
+msgstr "Sola kaydır"
+
+msgid "Scroll right"
+msgstr "Sağa kaydır"
+
+msgid "Today (all songs)"
+msgstr "Bugün (tüm şarkılar)"
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr "Toplam takipçi: {total}"
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr "{count} yeni şarkı • {total} parça"
+
+msgid "Private session enabled for 6 hours"
+msgstr "Gizli oturum 6 saatliğine açıldı"
+
+msgid "Private session ended"
+msgstr "Gizli oturum kapatıldı"
+
+msgid "Private session"
+msgstr "Gizli oturum"
+
+msgid "End private session"
+msgstr "Gizli oturumu kapat"
+
+msgid "Profile"
+msgstr "Profil"
+
+msgid "Public playlists"
+msgstr "Herkese açık çalma listeleri"
+
+msgid "Recently played artists"
+msgstr "Son dinlenen sanatçılar"
+
+msgid "Recently listened"
+msgstr "Son dinlenen"
+
+msgid "No public playlists"
+msgstr "Herkese açık çalma listesi yok"
+
+msgid "This profile has no public playlists yet."
+msgstr "Bu profilde henüz herkese açık çalma listesi yok."
+
+msgid "You"
+msgstr "Sen"
+
+#, rust-format
+msgid "{count} following"
+msgstr "{count} takip edilen"
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] "{count} herkese açık çalma listesi"
+msgstr[1] "{count} herkese açık çalma listesi"
+
+msgid "No activity yet"
+msgstr "Henüz etkinlik yok"
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr "Yeni takipçiler ve çalma listelerine eklenen şarkılar burada görünür."
+
+msgid "This week"
+msgstr "Bu hafta"
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr "Pazartesiden pazara. Tüm zamanları görmek için tıkla."
+
+msgid "Click to show this week."
+msgstr "Bu haftayı görmek için tıkla."
+
+msgid "Last 7 days"
+msgstr "Son 1 hafta"
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr "Son 7 gündeki dinlemelerinizden hesaplanır."
+
 #~ msgid "3. Pair once in Spotify"
 #~ msgstr "3. Spotify'da bir kez eşleştirin"
 

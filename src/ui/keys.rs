@@ -17,7 +17,57 @@ pub(super) const QUIT_SHORTCUT: &str = platform_shortcut("Ctrl+Q", "Cmd+Q");
 pub(super) const WINAMP_SHORTCUT: &str = platform_shortcut("Ctrl+M", "Cmd+Shift+M");
 pub(super) const MILKDROP_SHORTCUT: &str = platform_shortcut("Ctrl+Shift+K", "Cmd+Shift+K");
 
+const HORIZONTAL_SCROLL_RECTS_ID: &str = "spotifast-hscroll-rects";
+const TOUCHPAD_SWIPE_ID: &str = "spotifast-touchpad-swipe";
+
+#[derive(Clone, Copy, Default)]
+struct SwipeNavState {
+    accumulated_x: f32,
+    last_event_time: Option<f64>,
+    cooldown_until: f64,
+    locked_until_idle: bool,
+}
+
+/// Clears the current frame's horizontal-scroll regions before views draw.
+pub(crate) fn clear_horizontal_scroll_rects(ctx: &egui::Context) {
+    ctx.data_mut(|data| {
+        data.insert_temp::<Vec<egui::Rect>>(egui::Id::new(HORIZONTAL_SCROLL_RECTS_ID), Vec::new());
+    });
+}
+
+/// Registers an active horizontally-scrollable container so 2-finger swipes inside it
+/// scroll its items rather than navigating Back/Forward.
+pub(crate) fn note_horizontal_scroll(ui: &egui::Ui, rect: egui::Rect) {
+    ui.ctx().data_mut(|data| {
+        let rects = data.get_temp_mut_or_default::<Vec<egui::Rect>>(egui::Id::new(
+            HORIZONTAL_SCROLL_RECTS_ID,
+        ));
+        rects.push(rect);
+    });
+}
+
+fn is_hovering_horizontal_scroll(ctx: &egui::Context) -> bool {
+    let Some(pos) = ctx.input(|input| input.pointer.hover_pos()) else {
+        return false;
+    };
+    ctx.data(|data| {
+        data.get_temp::<Vec<egui::Rect>>(egui::Id::new(HORIZONTAL_SCROLL_RECTS_ID))
+            .is_some_and(|rects| rects.iter().any(|rect| rect.contains(pos)))
+    })
+}
+
+/// Evaluates keyboard, mouse-button, and touchpad-swipe navigation in one call
+/// for standalone hosts and tests that do not separately schedule touchpad
+/// evaluation after views draw.
+#[allow(dead_code)]
 pub fn handle(app: &mut App, ctx: &egui::Context) {
+    handle_keys(app, ctx);
+    handle_touchpad(app, ctx);
+}
+
+/// Evaluates keyboard shortcuts and extra mouse buttons before widgets draw so
+/// focused controls see consumed keys.
+pub fn handle_keys(app: &mut App, ctx: &egui::Context) {
     if app.soloist_view() != crate::app::SoloistView::App {
         // Setup owns navigation, but the window must still close and quit.
         // Consume shifted variants first so Cmd+Shift+Q never becomes Quit.
@@ -36,7 +86,10 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
     // control playback; a text field uses those keys for typing and moving
     // its caret.
     let editing_text = ctx.text_edit_focused();
+    let popup_open = egui::Popup::is_any_open(ctx);
     let songs_picked = app.picked_rows(app.page()).is_some();
+    let backspace_deletes_rows =
+        cfg!(target_os = "macos") && songs_picked && app.current_page_is_editable_playlist();
     let mut actions = Vec::new();
     ctx.input_mut(|input| {
         // With songs picked, Shift+Q is the song list's: it queues them.
@@ -129,6 +182,12 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
             key(Modifiers::COMMAND, Key::ArrowDown, Action::VolumeBy(-5));
         }
         if !editing_text && app.dialog.is_none() {
+            if !popup_open {
+                key(Modifiers::SHIFT, Key::Backspace, Action::Forward);
+                if !backspace_deletes_rows {
+                    key(Modifiers::NONE, Key::Backspace, Action::Back);
+                }
+            }
             key(
                 Modifiers::NONE,
                 Key::Questionmark,
@@ -219,6 +278,142 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
         } else if app.lyrics_fullscreen.is_some() {
             app.actions.push(Action::SetLyricsFullscreen(false));
         }
+    }
+}
+
+/// Evaluates horizontal touchpad swipes against the current frame's drawn
+/// horizontal-scroll containers (shelves and chip bars).
+pub(crate) fn handle_touchpad(app: &mut App, ctx: &egui::Context) {
+    if app.soloist_view() != crate::app::SoloistView::App {
+        return;
+    }
+    let editing_text = ctx.text_edit_focused();
+    let popup_open = egui::Popup::is_any_open(ctx);
+    let hovered_hscroll = is_hovering_horizontal_scroll(ctx);
+    handle_touchpad_swipe(
+        app,
+        ctx,
+        !app.settings.touchpad_navigation
+            || editing_text
+            || app.dialog.is_some()
+            || popup_open
+            || hovered_hscroll
+            || app.lyrics_fullscreen.is_some(),
+    );
+}
+
+fn handle_touchpad_swipe(app: &mut App, ctx: &egui::Context, blocked: bool) {
+    const SWIPE_THRESHOLD: f32 = 90.0;
+    const GESTURE_GAP_SECS: f64 = 0.18;
+    const COOLDOWN_SECS: f64 = 0.40;
+    const LINE_TO_POINTS: f32 = 24.0;
+
+    let (now, wheels): (f64, Vec<(egui::MouseWheelUnit, egui::Vec2, Modifiers, egui::TouchPhase)>) =
+        ctx.input(|input| {
+            let wheels = input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::MouseWheel {
+                        unit,
+                        delta,
+                        modifiers,
+                        phase,
+                    } => Some((*unit, *delta, *modifiers, *phase)),
+                    _ => None,
+                })
+                .collect();
+            (input.time, wheels)
+        });
+
+    if blocked {
+        ctx.data_mut(|data| {
+            let state =
+                data.get_temp_mut_or_default::<SwipeNavState>(egui::Id::new(TOUCHPAD_SWIPE_ID));
+            state.accumulated_x = 0.0;
+            // Lock any horizontal scroll gesture that started/passed over a
+            // horizontal shelf so trailing inertia slightly outside it cannot
+            // suddenly trigger Back/Forward.
+            for (_, delta, _, phase) in &wheels {
+                match phase {
+                    egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+                        state.locked_until_idle = false;
+                        state.last_event_time = Some(now);
+                    }
+                    _ if delta.x.abs() > 0.01 => {
+                        state.locked_until_idle = true;
+                        state.last_event_time = Some(now);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        return;
+    }
+
+    if wheels.is_empty() {
+        return;
+    }
+
+    let mut state = ctx
+        .data(|data| data.get_temp::<SwipeNavState>(egui::Id::new(TOUCHPAD_SWIPE_ID)))
+        .unwrap_or_default();
+    let mut fired = None;
+    for (unit, delta, modifiers, phase) in wheels {
+        if modifiers.command || modifiers.ctrl || modifiers.alt || unit == egui::MouseWheelUnit::Page {
+            continue;
+        }
+        if state
+            .last_event_time
+            .is_some_and(|prev| (now - prev) > GESTURE_GAP_SECS)
+        {
+            state.accumulated_x = 0.0;
+            state.locked_until_idle = false;
+        }
+        state.last_event_time = Some(now);
+
+        if matches!(phase, egui::TouchPhase::End | egui::TouchPhase::Cancel) {
+            state.accumulated_x = 0.0;
+            state.locked_until_idle = false;
+            continue;
+        }
+        let scale = if unit == egui::MouseWheelUnit::Line {
+            LINE_TO_POINTS
+        } else {
+            1.0
+        };
+        let (dx, dy) = (delta.x * scale, delta.y * scale);
+        if dx.abs() < 0.01 && dy.abs() < 0.01 {
+            continue;
+        }
+        if dy.abs() * 1.1 >= dx.abs() {
+            state.accumulated_x = 0.0;
+            continue;
+        }
+        if state.locked_until_idle || now < state.cooldown_until {
+            continue;
+        }
+        if state.accumulated_x != 0.0 && dx.signum() != state.accumulated_x.signum() {
+            state.accumulated_x = 0.0;
+        }
+        state.accumulated_x += dx;
+        if state.accumulated_x >= SWIPE_THRESHOLD {
+            fired = Some(Action::Back);
+            state.accumulated_x = 0.0;
+            state.locked_until_idle = true;
+            state.cooldown_until = now + COOLDOWN_SECS;
+        } else if state.accumulated_x <= -SWIPE_THRESHOLD {
+            fired = Some(Action::Forward);
+            state.accumulated_x = 0.0;
+            state.locked_until_idle = true;
+            state.cooldown_until = now + COOLDOWN_SECS;
+        }
+    }
+    ctx.data_mut(|data| {
+        data.insert_temp(egui::Id::new(TOUCHPAD_SWIPE_ID), state);
+    });
+    if let Some(action) = fired {
+        app.actions.push(action);
     }
 }
 
@@ -359,6 +554,10 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             gettext(locale, "Show or hide the sidebar"),
         ),
         (keys("Alt+←  /  Alt+→"), gettext(locale, "Back or forward")),
+        (
+            keys("Backspace  /  Shift+Backspace"),
+            gettext(locale, "Back or forward"),
+        ),
         (
             keys("Page Up  /  Page Down"),
             gettext(locale, "Scroll the page"),
@@ -838,6 +1037,24 @@ mod tests {
             format!("{:?}", [Action::SetLyricsFullscreen(false)]),
             "F leaves lyrics full screen"
         );
+        app.lyrics_fullscreen = None;
+        assert_eq!(
+            press(&mut app, Key::Backspace, Modifiers::NONE),
+            format!("{:?}", [Action::Back]),
+            "Backspace goes back"
+        );
+        assert_eq!(
+            press(&mut app, Key::Backspace, Modifiers::SHIFT),
+            format!("{:?}", [Action::Forward]),
+            "Shift+Backspace goes forward"
+        );
+        app.dialog = Some(Dialog::Shortcuts);
+        assert_eq!(
+            press(&mut app, Key::Backspace, Modifiers::NONE),
+            "[]",
+            "dialogs block Backspace navigation"
+        );
+        app.dialog = None;
         if crate::soloist::install::supported() {
             app.soloist_onboarding = crate::settings::SoloistOnboarding::Welcome;
             assert_eq!(
@@ -1161,5 +1378,220 @@ mod tests {
             )),
             "a disabled page must not swallow Page Down"
         );
+    }
+
+    #[test]
+    fn touchpad_swipe_navigates_once_and_respects_scroll_areas_and_setting() {
+        let root =
+            std::env::temp_dir().join(format!("spotifast-swipe-test-{}", std::process::id()));
+        let dirs = AppDirs {
+            config: root.join("config"),
+            state: root.join("state"),
+            cache: root.join("cache"),
+        };
+        let mut app = App::new(
+            &crate::backend::Waker::default(),
+            dirs,
+            Settings::default(),
+            AppOptions {
+                media_controls: false,
+                restore_sign_in: false,
+                tray: false,
+                autostart: false,
+            },
+        );
+        crate::demo::populate(&mut app);
+        let ctx = egui::Context::default();
+        let swipe = |dx: f32, dy: f32, time: f64, pos: egui::Pos2| egui::RawInput {
+            time: Some(time),
+            events: vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(dx, dy),
+                    modifiers: Modifiers::NONE,
+                    phase: egui::TouchPhase::Move,
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Two-finger right swipe triggers Back once; inertial tail does not double-fire.
+        let mut out = ctx.run_ui(swipe(60.0, 0.0, 1.00, egui::pos2(200.0, 200.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert!(app.actions.is_empty());
+
+        let mut out = ctx.run_ui(swipe(50.0, 0.0, 1.02, egui::pos2(200.0, 200.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert_eq!(format!("{:?}", app.actions), format!("{:?}", [Action::Back]));
+        app.actions.clear();
+
+        let mut out = ctx.run_ui(swipe(120.0, 0.0, 1.05, egui::pos2(200.0, 200.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert!(app.actions.is_empty(), "inertia must not trigger a second Back");
+
+        // After gesture gap, left swipe triggers Forward.
+        let mut out = ctx.run_ui(swipe(-110.0, 0.0, 2.00, egui::pos2(200.0, 200.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert_eq!(
+            format!("{:?}", app.actions),
+            format!("{:?}", [Action::Forward])
+        );
+        app.actions.clear();
+
+        // Pointer inside a registered horizontal scroll container blocks swipe navigation.
+        ctx.data_mut(|data| {
+            data.insert_temp(
+                egui::Id::new(HORIZONTAL_SCROLL_RECTS_ID),
+                vec![egui::Rect::from_min_size(
+                    egui::pos2(50.0, 50.0),
+                    egui::vec2(200.0, 100.0),
+                )],
+            );
+        });
+        let mut out = ctx.run_ui(swipe(150.0, 0.0, 3.00, egui::pos2(100.0, 100.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert!(
+            app.actions.is_empty(),
+            "hovering a horizontal shelf blocks Back/Forward swipe"
+        );
+        clear_horizontal_scroll_rects(&ctx);
+
+        // Disabling the setting disables swipe navigation.
+        app.settings.touchpad_navigation = false;
+        let mut out = ctx.run_ui(swipe(150.0, 0.0, 4.00, egui::pos2(200.0, 200.0)), |ui| {
+            handle(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        assert!(app.actions.is_empty());
+
+        app.backend.shutdown();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn horizontal_shelf_in_scrolled_page_blocks_touchpad_back_and_forward() {
+        let root = std::env::temp_dir().join(format!(
+            "spotifast-scrolled-shelf-swipe-test-{}",
+            std::process::id()
+        ));
+        let dirs = AppDirs {
+            config: root.join("config"),
+            state: root.join("state"),
+            cache: root.join("cache"),
+        };
+        let mut app = App::new(
+            &crate::backend::Waker::default(),
+            dirs,
+            Settings::default(),
+            AppOptions {
+                media_controls: false,
+                restore_sign_in: false,
+                tray: false,
+                autostart: false,
+            },
+        );
+        crate::demo::populate(&mut app);
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 480.0));
+
+        let run_frame = |app: &mut App, dx: f32, time: f64, pos: egui::Pos2| {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                events: vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(dx, 0.0),
+                        modifiers: Modifiers::NONE,
+                        phase: egui::TouchPhase::Move,
+                    },
+                ],
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                let frame_ctx = ui.ctx().clone();
+                handle_keys(app, &frame_ctx);
+                clear_horizontal_scroll_rects(&frame_ctx);
+                egui::CentralPanel::default().show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("scrolled-home-test")
+                        .vertical_scroll_offset(400.0)
+                        .show(ui, |ui| {
+                            ui.allocate_space(egui::vec2(500.0, 520.0));
+                            let palette = app.palette;
+                            crate::ui::widgets::shelf(
+                                ui,
+                                &palette,
+                                app.locale,
+                                "recent",
+                                "Recently played",
+                                |ui| {
+                                ui.allocate_space(egui::vec2(1200.0, 180.0));
+                            });
+                            ui.allocate_space(egui::vec2(500.0, 200.0));
+                        });
+                });
+                handle_touchpad(app, &frame_ctx);
+            });
+            out.textures_delta.clear();
+        };
+
+        // First settle layout and verify the scrolled-down shelf registered a
+        // real non-collapsed rect inside the visible viewport.
+        run_frame(&mut app, 0.0, 1.00, egui::pos2(200.0, 220.0));
+        let rects = ctx
+            .data(|data| data.get_temp::<Vec<egui::Rect>>(egui::Id::new(HORIZONTAL_SCROLL_RECTS_ID)))
+            .unwrap_or_default();
+        assert_eq!(rects.len(), 1, "overflowing shelf should register its rect");
+        let shelf_rect = rects[0];
+        assert!(
+            shelf_rect.height() >= 150.0,
+            "scrolled shelf rect must not collapse: {shelf_rect:?}"
+        );
+
+        // Swiping horizontally inside the scrolled shelf must NOT navigate Back/Forward.
+        app.actions.clear();
+        run_frame(&mut app, 150.0, 1.10, shelf_rect.center());
+        assert!(
+            app.actions.is_empty(),
+            "horizontal swipe inside scrolled shelf triggered navigation: {:?}",
+            app.actions
+        );
+
+        // Immediate trailing ticks slightly outside the shelf stay locked for the same swipe.
+        run_frame(
+            &mut app,
+            150.0,
+            1.14,
+            egui::pos2(shelf_rect.center().x, shelf_rect.bottom() + 20.0),
+        );
+        assert!(
+            app.actions.is_empty(),
+            "trailing momentum outside shelf triggered navigation: {:?}",
+            app.actions
+        );
+
+        // After gesture gap outside any shelf, swipe navigation works normally.
+        run_frame(&mut app, 150.0, 2.00, egui::pos2(200.0, 60.0));
+        assert_eq!(
+            format!("{:?}", app.actions),
+            format!("{:?}", [Action::Back])
+        );
+
+        app.backend.shutdown();
+        let _ = std::fs::remove_dir_all(root);
     }
 }

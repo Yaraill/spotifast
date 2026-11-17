@@ -16,7 +16,7 @@ use crate::api::models::{Album, Image, PlayHistory, Track};
 const COUNTS_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Maximum number of stored local plays.
-const KEPT: usize = 500;
+const KEPT: usize = 10_000;
 
 /// A play made here and a play of the same song Spotify reports within this
 /// many seconds of it are the same play. Spotify dates a play at its end, so
@@ -35,6 +35,7 @@ pub fn counts_after(duration_ms: u32) -> std::time::Duration {
 #[derive(Default)]
 pub struct History {
     plays: Vec<PlayHistory>,
+    counts: HashMap<String, usize>,
     /// Set when the in-memory list differs from the file.
     dirty: bool,
     /// Set by the file writer when a handed-over write failed.
@@ -42,20 +43,47 @@ pub struct History {
 }
 
 impl History {
+    fn rebuild_counts(&mut self) {
+        self.counts.clear();
+        for play in &self.plays {
+            if !play.track.uri.is_empty() {
+                *self.counts.entry(play.track.uri.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+
     /// Reads the history, or returns an empty history if the file is unreadable.
     pub fn load(path: &Path) -> Self {
         let plays = std::fs::read_to_string(path)
             .ok()
             .and_then(|text| serde_json::from_str::<Vec<PlayHistory>>(&text).ok())
             .unwrap_or_default();
-        Self {
+        let mut history = Self {
             plays,
             ..Self::default()
-        }
+        };
+        history.rebuild_counts();
+        history
     }
 
     pub fn plays(&self) -> &[PlayHistory] {
         &self.plays
+    }
+
+    /// Number of completed local Spotifast listens recorded for `uri`.
+    pub fn play_count(&self, uri: &str) -> usize {
+        self.counts.get(uri).copied().unwrap_or(0)
+    }
+
+    /// Total local plays and duration listened today on this device.
+    pub fn stats_for_date(&self, date: jiff::civil::Date) -> (usize, u64) {
+        stats_for_date_in(&self.plays, date)
+    }
+
+    /// Total local plays and duration listened during the Monday-to-Monday week
+    /// containing `date` (`Monday 00:00` through `date`).
+    pub fn stats_for_week(&self, date: jiff::civil::Date) -> (usize, u64) {
+        stats_for_range_in(&self.plays, week_start_monday(date), date)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -106,6 +134,7 @@ impl History {
             },
         );
         self.plays.truncate(KEPT);
+        self.rebuild_counts();
         self.dirty = true;
     }
 
@@ -114,8 +143,117 @@ impl History {
             return;
         }
         self.plays.clear();
+        self.counts.clear();
         self.dirty = true;
     }
+}
+
+/// Returns the Monday starting the local Monday-to-Monday week containing `date`.
+pub fn week_start_monday(date: jiff::civil::Date) -> jiff::civil::Date {
+    let offset = i64::from(date.weekday().to_monday_zero_offset());
+    date.checked_sub(jiff::Span::new().days(offset))
+        .unwrap_or(date)
+}
+
+fn play_local_date(play: &PlayHistory, tz: &jiff::tz::TimeZone) -> Option<jiff::civil::Date> {
+    let at = play.played_at.as_deref()?;
+    if let Ok(ts) = at.parse::<jiff::Timestamp>() {
+        Some(ts.to_zoned(tz.clone()).date())
+    } else {
+        at.get(..10)?.parse::<jiff::civil::Date>().ok()
+    }
+}
+
+/// Counts plays and total track duration whose local date falls in `start..=end`.
+pub fn stats_for_range_in(
+    plays: &[PlayHistory],
+    start: jiff::civil::Date,
+    end: jiff::civil::Date,
+) -> (usize, u64) {
+    let tz = jiff::tz::TimeZone::system();
+    let mut count = 0usize;
+    let mut ms = 0u64;
+    for play in plays {
+        if play_local_date(play, &tz).is_some_and(|day| (start..=end).contains(&day)) {
+            count += 1;
+            ms += u64::from(play.track.duration_ms);
+        }
+    }
+    (count, ms)
+}
+
+/// Counts plays and total track duration whose timestamp falls on local `date`.
+pub fn stats_for_date_in(plays: &[PlayHistory], date: jiff::civil::Date) -> (usize, u64) {
+    stats_for_range_in(plays, date, date)
+}
+
+fn track_richness(track: &Track) -> (bool, bool, bool, bool) {
+    (
+        track
+            .album
+            .as_ref()
+            .is_some_and(|album| !album.images.is_empty()),
+        track.id.is_some(),
+        !track.artists.is_empty(),
+        !track.name.is_empty(),
+    )
+}
+
+/// Ranks most-played tracks whose local play date falls in `start..=end`.
+///
+/// Expects `plays` newest-first (as returned by `merged`): ties break by
+/// earliest index in `plays` (most recently played first).
+pub fn top_tracks_in(
+    plays: &[PlayHistory],
+    start: jiff::civil::Date,
+    end: jiff::civil::Date,
+    limit: usize,
+) -> Vec<Track> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let tz = jiff::tz::TimeZone::system();
+    struct Entry<'a> {
+        track: &'a Track,
+        count: usize,
+        first_index: usize,
+    }
+    let mut by_uri: HashMap<&str, Entry<'_>> = HashMap::new();
+    for (index, play) in plays.iter().enumerate() {
+        let uri = play.track.uri.as_str();
+        if uri.is_empty() {
+            continue;
+        }
+        if !play_local_date(play, &tz).is_some_and(|day| (start..=end).contains(&day)) {
+            continue;
+        }
+        match by_uri.get_mut(uri) {
+            Some(entry) => {
+                entry.count += 1;
+                if track_richness(&play.track) > track_richness(entry.track) {
+                    entry.track = &play.track;
+                }
+            }
+            None => {
+                by_uri.insert(
+                    uri,
+                    Entry {
+                        track: &play.track,
+                        count: 1,
+                        first_index: index,
+                    },
+                );
+            }
+        }
+    }
+    let mut ranked: Vec<Entry<'_>> = by_uri.into_values().collect();
+    ranked.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.first_index.cmp(&b.first_index))
+    });
+    ranked.truncate(limit);
+    ranked.into_iter().map(|entry| entry.track.clone()).collect()
 }
 
 /// Converts the playing track into a history record.
@@ -468,5 +606,90 @@ mod tests {
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn stats_for_date_in_sums_duration_for_local_date() {
+        let now = jiff::Timestamp::now();
+        let local_today = now.to_zoned(jiff::tz::TimeZone::system()).date();
+        let yesterday = local_today.yesterday().unwrap();
+        let plays = vec![
+            PlayHistory {
+                track: Track {
+                    uri: "spotify:track:a".into(),
+                    duration_ms: 120_000,
+                    ..Track::default()
+                },
+                played_at: Some(now.to_string()),
+                context: None,
+            },
+            PlayHistory {
+                track: Track {
+                    uri: "spotify:track:a".into(),
+                    duration_ms: 180_000,
+                    ..Track::default()
+                },
+                played_at: Some(now.to_string()),
+                context: None,
+            },
+        ];
+        assert_eq!(stats_for_date_in(&plays, local_today), (2, 300_000));
+        assert_eq!(stats_for_date_in(&plays, yesterday), (0, 0));
+    }
+
+    #[test]
+    fn week_start_monday_and_weekly_stats_reset_on_monday() {
+        let monday = jiff::civil::date(2026, 11, 16);
+        let sunday_before = jiff::civil::date(2026, 11, 15);
+        let wednesday = jiff::civil::date(2026, 11, 18);
+        let sunday_end = jiff::civil::date(2026, 11, 22);
+        let next_monday = jiff::civil::date(2026, 11, 23);
+
+        assert_eq!(week_start_monday(monday), monday);
+        assert_eq!(week_start_monday(wednesday), monday);
+        assert_eq!(week_start_monday(sunday_end), monday);
+        assert_eq!(week_start_monday(next_monday), next_monday);
+
+        let plays = vec![
+            song("spotify:track:prev-sun", "2026-11-15", 100),
+            song("spotify:track:mon", "2026-11-16", 120),
+            song("spotify:track:wed", "2026-11-18", 180),
+            song("spotify:track:sun", "2026-11-22", 200),
+        ];
+        assert_eq!(
+            stats_for_range_in(&plays, week_start_monday(sunday_before), sunday_before),
+            (1, 100_000)
+        );
+        assert_eq!(
+            stats_for_range_in(&plays, week_start_monday(sunday_end), sunday_end),
+            (3, 500_000)
+        );
+        assert_eq!(
+            stats_for_range_in(&plays, week_start_monday(next_monday), next_monday),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn top_tracks_in_ranks_last_seven_days_by_count_then_recency() {
+        let end = jiff::civil::date(2026, 11, 17);
+        let start = end.checked_sub(jiff::Span::new().days(6)).unwrap();
+        let plays = vec![
+            song("spotify:track:b", "2026-11-17", 120),
+            song("spotify:track:a", "2026-11-16", 120),
+            song("spotify:track:c", "2026-11-15", 120),
+            song("spotify:track:b", "2026-11-14", 120),
+            song("spotify:track:c", "2026-11-11", 120),
+            // 8 days old: outside the inclusive 7-day window [Nov 11..Nov 17].
+            song("spotify:track:a", "2026-11-10", 120),
+            song("spotify:track:a", "2026-11-09", 120),
+        ];
+        let ranked = top_tracks_in(&plays, start, end, 10);
+        let uris: Vec<&str> = ranked.iter().map(|track| track.uri.as_str()).collect();
+        // `b` (2) and `c` (2) outrank `a` (1 within range); `b` comes before `c` as more recent.
+        assert_eq!(
+            uris,
+            vec!["spotify:track:b", "spotify:track:c", "spotify:track:a"]
+        );
     }
 }

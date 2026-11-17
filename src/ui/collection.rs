@@ -1032,34 +1032,35 @@ fn table_contents(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
             },
             crate::motion::seconds(ui.ctx(), 0.12),
         );
-        let (response, asked) = widgets::track_row_response(
-            ui,
-            app,
-            TrackRow {
-                index: if entry.view_uris.is_some() {
-                    entry.view_positions[index].unwrap_or(row)
-                } else {
-                    actual_index
-                },
-                number: Some(if sorted { row + 1 } else { actual_index + 1 }),
-                item,
-                context: &context,
-                show_cover,
-                show_album: table.show_album,
-                // Rows reserve the column only where the header does.
-                added_at: added_at.as_deref().filter(|_| table.show_added),
-                added_by: added_by.as_deref(),
-                show_added_by: table.show_added_by,
-                show_plays: table.show_plays,
-                compact: false,
-                thin,
-                shift,
-                picked: picked.contains(&row),
-                picked_songs: &picked_songs,
-                picked_positions: &picked_positions,
-                position: playlist_position(&table, index),
+        let track_row = TrackRow {
+            index: if entry.view_uris.is_some() {
+                entry.view_positions[index].unwrap_or(row)
+            } else {
+                actual_index
             },
-        );
+            number: Some(if sorted { row + 1 } else { actual_index + 1 }),
+            item,
+            context: &context,
+            show_cover,
+            show_album: table.show_album,
+            // Rows reserve the column only where the header does.
+            added_at: added_at.as_deref().filter(|_| table.show_added),
+            added_by: added_by.as_deref(),
+            show_added_by: table.show_added_by,
+            show_plays: table.show_plays,
+            compact: false,
+            thin,
+            shift,
+            picked: picked.contains(&row),
+            picked_songs: &picked_songs,
+            picked_positions: &picked_positions,
+            position: playlist_position(&table, index),
+        };
+        let (response, asked) = if table.page == Page::TopSongs {
+            widgets::top_track_row_response(ui, app, track_row)
+        } else {
+            widgets::track_row_response(ui, app, track_row)
+        };
         row_responses.push((row, response));
         if let Some(asked) = asked {
             pick = Some((row, asked));
@@ -1777,6 +1778,72 @@ pub(crate) fn playlist_cached_table_items(
     (items, positions, duration_ms)
 }
 
+/// Quick batch actions for a top-tracks block (shared by Home and the full Top Songs page).
+pub(crate) fn top_songs_actions(
+    ui: &mut egui::Ui,
+    app: &mut App,
+    tracks: &[crate::api::models::Track],
+) {
+    if tracks.is_empty() {
+        return;
+    }
+    let palette = app.palette;
+    let locale = app.locale;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+        if theme::soft_button(
+            ui,
+            &palette,
+            Some(Icon::PlayFilled),
+            &gettext(locale, "Play all"),
+            false,
+        )
+        .clicked()
+        {
+            app.actions.push(Action::PlayUris {
+                uris: tracks.iter().map(|track| track.uri.clone()).collect(),
+                index: 0,
+            });
+        }
+        if theme::soft_button(
+            ui,
+            &palette,
+            Some(Icon::ListPlus),
+            &gettext(locale, "Add to queue"),
+            false,
+        )
+        .clicked()
+        {
+            app.actions.push(Action::QueueMany {
+                songs: tracks
+                    .iter()
+                    .map(|track| (track.uri.clone(), track.name.clone()))
+                    .collect(),
+            });
+        }
+        if theme::soft_button(
+            ui,
+            &palette,
+            Some(Icon::CirclePlus),
+            &gettext(locale, "Save as playlist"),
+            false,
+        )
+        .clicked()
+        {
+            let name = format!(
+                "{} • {}",
+                gettext(locale, "Your top songs"),
+                app.home.top_period.label(locale)
+            );
+            app.actions.push(Action::ShowDialog(Dialog::CreatePlaylist {
+                name,
+                public: false,
+                add_uris: tracks.iter().map(|track| track.uri.clone()).collect(),
+            }));
+        }
+    });
+}
+
 /// A complete, ranked view of the listener's current top tracks.
 pub fn top_songs(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
@@ -1807,10 +1874,10 @@ pub fn top_songs(app: &mut App, ui: &mut egui::Ui) {
     if let Some(period) = widgets::chips(ui, &palette, &options, app.home.top_period) {
         app.actions.push(Action::SetTopPeriod(period));
     }
-    ui.add_space(18.0);
+    ui.add_space(10.0);
 
     let tracks = match &app.home.top_songs {
-        Loadable::Loaded(tracks) => tracks,
+        Loadable::Loaded(tracks) => tracks.clone(),
         Loadable::Loading | Loadable::NotLoaded => {
             widgets::skeleton_rows(ui, &palette, app.locale, 10);
             return;
@@ -1821,6 +1888,8 @@ pub fn top_songs(app: &mut App, ui: &mut egui::Ui) {
             return;
         }
     };
+    top_songs_actions(ui, app, &tracks);
+    ui.add_space(10.0);
     let generation = app.home.top_songs_generation;
     let names = app.user_names_revision;
     let items =
@@ -1919,7 +1988,7 @@ pub fn playlist(app: &mut App, ui: &mut egui::Ui, id: &str) {
             let owner_id = playlist.owner.id.as_deref();
             let others = other_adders(owner_id, &page.contributors, &user_id);
             let made_together = playlist.collaborative || !others.is_empty();
-            let mut byline = vec![(owner_name(app, playlist).to_string(), None)];
+            let mut byline = vec![(owner_name(app, playlist).to_string(), owner_page(playlist))];
             if let Some(saves) = playlist.followers.as_ref().map(|followers| followers.total) {
                 byline.push((saves_text(app.locale, saves), None));
             }
@@ -2286,7 +2355,7 @@ pub fn album(app: &mut App, ui: &mut egui::Ui, id: &str) {
 
 fn playlist_loading_hero(app: &mut App, ui: &mut egui::Ui, playlist: &Playlist) {
     let images = hero_images(&playlist.images, None, false, HeroArt::of(app));
-    let mut byline = vec![(owner_name(app, playlist).to_string(), None)];
+    let mut byline = vec![(owner_name(app, playlist).to_string(), owner_page(playlist))];
     let count = playlist.track_total();
     if count > 0 {
         byline.push((song_count(app.locale, count), None));
@@ -2705,6 +2774,15 @@ fn owner_name<'a>(app: &'a App, playlist: &'a Playlist) -> &'a str {
             app.user_names.get(id)?.as_deref()
         })
         .unwrap_or_else(|| playlist.owner_name())
+}
+
+fn owner_page(playlist: &Playlist) -> Option<Page> {
+    playlist
+        .owner
+        .id
+        .as_deref()
+        .filter(|id| !id.is_empty() && *id != "spotify")
+        .map(|id| Page::UserProfile(id.to_owned()))
 }
 
 /// Who besides the owner added songs to a playlist, from the adders seen

@@ -8,7 +8,9 @@ use egui::{
 use crate::api::models::*;
 use crate::app::App;
 use crate::i18n::{Locale, gettext, ngettext, pgettext};
-use crate::model::{Action, Dialog, DragEntry, DragTrack, Page, RowContext, RowPick};
+use crate::model::{
+    Action, Dialog, DragEntry, DragHomeShelf, DragTrack, Page, RowContext, RowPick,
+};
 use crate::theme::{self, Icon, Palette};
 use crate::util;
 
@@ -1660,6 +1662,7 @@ struct Columns {
     added_by: f32,
     added: f32,
     plays: f32,
+    stats: f32,
     heart: f32,
     duration: f32,
     more: f32,
@@ -1673,10 +1676,27 @@ fn plays_fit(width: f32) -> bool {
     width > 560.0
 }
 
-fn columns(width: f32, row: &TrackRow<'_>) -> Columns {
+fn columns(width: f32, row: &TrackRow<'_>, top_stats: bool) -> Columns {
     let extra_wide = width > 920.0;
     let wide = width > 760.0;
     let medium = width > 560.0;
+    let stats = if top_stats && !row.compact && width > 620.0 {
+        160.0
+    } else if top_stats && !row.compact && width > 460.0 {
+        84.0
+    } else {
+        0.0
+    };
+    let album = if row.show_album && medium {
+        let base = (width * 0.28).clamp(140.0, 360.0);
+        if stats > 0.0 {
+            (base - 40.0).max(110.0)
+        } else {
+            base
+        }
+    } else {
+        0.0
+    };
     Columns {
         number: if row.compact { 0.0 } else { 44.0 },
         cover: if row.show_cover {
@@ -1684,11 +1704,7 @@ fn columns(width: f32, row: &TrackRow<'_>) -> Columns {
         } else {
             0.0
         },
-        album: if row.show_album && medium {
-            (width * 0.28).clamp(140.0, 360.0)
-        } else {
-            0.0
-        },
+        album,
         added_by: if row.show_added_by && extra_wide {
             130.0
         } else {
@@ -1704,6 +1720,7 @@ fn columns(width: f32, row: &TrackRow<'_>) -> Columns {
         } else {
             0.0
         },
+        stats,
         heart: if row.compact { 0.0 } else { 36.0 },
         duration: if row.compact { 44.0 } else { 56.0 },
         more: if row.compact { 0.0 } else { 36.0 },
@@ -1715,7 +1732,13 @@ fn columns(width: f32, row: &TrackRow<'_>) -> Columns {
 /// Returns the selection behavior for a row-body click. The caller supplies
 /// the display index because sorting and filtering change row positions.
 pub fn track_row(ui: &mut Ui, app: &mut App, row: TrackRow<'_>) -> Option<RowPick> {
-    track_row_response(ui, app, row).1
+    track_row_scoped(ui, app, row, false).1
+}
+
+/// Draws a ranked top-track row highlighting `#1–#3` and showing Spotifast's
+/// local play count badge alongside Spotify popularity & release year.
+pub fn top_track_row(ui: &mut Ui, app: &mut App, row: TrackRow<'_>) -> Option<RowPick> {
+    track_row_scoped(ui, app, row, true).1
 }
 
 /// Also exposes the row body so a collection can navigate between whole songs.
@@ -1723,6 +1746,23 @@ pub(crate) fn track_row_response(
     ui: &mut Ui,
     app: &mut App,
     row: TrackRow<'_>,
+) -> (egui::Response, Option<RowPick>) {
+    track_row_scoped(ui, app, row, false)
+}
+
+pub(crate) fn top_track_row_response(
+    ui: &mut Ui,
+    app: &mut App,
+    row: TrackRow<'_>,
+) -> (egui::Response, Option<RowPick>) {
+    track_row_scoped(ui, app, row, true)
+}
+
+fn track_row_scoped(
+    ui: &mut Ui,
+    app: &mut App,
+    row: TrackRow<'_>,
+    top_stats: bool,
 ) -> (egui::Response, Option<RowPick>) {
     // Virtual lists reuse the visible slots as they scroll. Keep focus and
     // accessibility actions attached to the song and its occurrence instead.
@@ -1739,7 +1779,7 @@ pub(crate) fn track_row_response(
             .unwrap_or(row.index),
     ));
     ui.scope_builder(UiBuilder::new().id(id), |ui| {
-        track_row_contents(ui, app, row)
+        track_row_contents(ui, app, row, top_stats)
     })
     .inner
 }
@@ -1748,6 +1788,7 @@ fn track_row_contents(
     ui: &mut Ui,
     app: &mut App,
     row: TrackRow<'_>,
+    top_stats: bool,
 ) -> (egui::Response, Option<RowPick>) {
     let palette = app.palette;
     let row_height = if row.thin {
@@ -1857,7 +1898,7 @@ fn track_row_contents(
     }
     // The row highlight also shows keyboard focus. Do not add an outline
     // when a mouse click gives the row focus for arrow-key navigation.
-    let cols = columns(width, &row);
+    let cols = columns(width, &row, top_stats);
     let painter = ui.painter().clone();
     let mut x = rect.left() + 8.0;
 
@@ -1881,17 +1922,28 @@ fn track_row_contents(
         } else if playing {
             theme::paint_icon(ui, Icon::AudioLines, cell, 16.0, palette.accent);
         } else {
-            let color = if is_current {
+            let rank = row.number.unwrap_or(row.index + 1);
+            let podium = top_stats && rank <= 3;
+            let color = if is_current || podium {
                 palette.accent
             } else {
                 palette.secondary
             };
-            let label = row.number.unwrap_or(row.index + 1).to_string();
+            let font = if podium {
+                theme::bold(14.0)
+            } else {
+                theme::regular(14.0)
+            };
+            let label = if top_stats {
+                format!("#{rank}")
+            } else {
+                rank.to_string()
+            };
             painter.text(
                 cell.center(),
                 egui::Align2::CENTER_CENTER,
                 label,
-                theme::regular(14.0),
+                font,
                 color,
             );
         }
@@ -1951,8 +2003,13 @@ fn track_row_contents(
         x += cols.cover;
     }
     let right_fixed = cols.heart + cols.duration + cols.more + 8.0;
-    let text_right =
-        rect.right() - right_fixed - cols.plays - cols.added - cols.added_by - cols.album;
+    let text_right = rect.right()
+        - right_fixed
+        - cols.stats
+        - cols.plays
+        - cols.added
+        - cols.added_by
+        - cols.album;
     let title_rect = Rect::from_min_max(
         pos2(x, rect.top()),
         pos2((text_right - 12.0).max(x), rect.bottom()),
@@ -2240,6 +2297,59 @@ fn track_row_contents(
         }
         x += cols.plays;
     }
+    // Top-songs local play counter + popularity / release year badges.
+    if cols.stats > 0.0 {
+        let stats_rect = Rect::from_min_size(pos2(x, rect.top()), vec2(cols.stats - 8.0, row_height));
+        let local_plays = app.track_play_count(row.item.uri());
+        let meta_text = match row.item {
+            PlayableItem::Track(track) => {
+                let pop = track.popularity;
+                let year = track.album.as_ref().and_then(|album| album.year());
+                match (pop, year) {
+                    (Some(p), Some(y)) => Some(format!("%{p} • {y}")),
+                    (Some(p), None) => Some(format!("%{p}")),
+                    (None, Some(y)) => Some(y.to_owned()),
+                    (None, None) => None,
+                }
+            }
+            PlayableItem::Episode(_) => None,
+        };
+        let mut child = ui.new_child(
+            UiBuilder::new()
+                .max_rect(stats_rect)
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        child.set_clip_rect(stats_rect.intersect(ui.clip_rect()));
+        child.spacing_mut().item_spacing.x = 6.0;
+        if let Some(meta) = meta_text
+            && cols.stats >= 140.0
+        {
+            let tip = gettext(app.locale, "Spotify popularity and release year");
+            row_stat_pill(
+                &mut child,
+                &palette,
+                Icon::TrendingUp,
+                &meta,
+                palette.surface,
+                palette.secondary,
+                &tip,
+            );
+        }
+        if local_plays > 0 {
+            let label = format!("{local_plays}×");
+            let tip = gettext(app.locale, "Plays in your listening history");
+            row_stat_pill(
+                &mut child,
+                &palette,
+                Icon::Headphones,
+                &label,
+                palette.accent.gamma_multiply(0.16),
+                palette.accent,
+                &tip,
+            );
+        }
+        x += cols.stats;
+    }
 
     // Heart.
     if cols.heart > 0.0 {
@@ -2474,14 +2584,23 @@ fn drag_label(locale: Locale, track: &DragTrack) -> String {
 
 /// The chip that rides the pointer while a song is being dragged.
 pub fn drag_ghost(ctx: &egui::Context, palette: &Palette, locale: Locale) {
-    // A song and a sidebar row ride the pointer the same way.
+    // A song, a sidebar row, and a home shelf ride the pointer the same way.
     let chip = egui::DragAndDrop::payload::<DragTrack>(ctx)
-        .map(|track| (drag_label(locale, &track), track.image.clone()))
+        .map(|track| (drag_label(locale, &track), track.image.clone(), Icon::Music))
         .or_else(|| {
             egui::DragAndDrop::payload::<DragEntry>(ctx)
-                .map(|entry| (entry.title.clone(), entry.image.clone()))
+                .map(|entry| (entry.title.clone(), entry.image.clone(), Icon::Music))
+        })
+        .or_else(|| {
+            egui::DragAndDrop::payload::<DragHomeShelf>(ctx).map(|shelf| {
+                (
+                    gettext(locale, shelf.title_hint).into_owned(),
+                    None,
+                    Icon::GripVertical,
+                )
+            })
         });
-    let Some((title, image)) = chip else {
+    let Some((title, image, icon)) = chip else {
         return;
     };
     // The payload lives through the release frame; the chip should not.
@@ -2512,7 +2631,7 @@ pub fn drag_ghost(ctx: &egui::Context, palette: &Palette, locale: Locale) {
                     ui.horizontal(|ui| {
                         ui.set_max_width(280.0);
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        cover(ui, palette, image.as_deref(), 24.0, 4.0, Icon::Music);
+                        cover(ui, palette, image.as_deref(), 24.0, 4.0, icon);
                         ui.add(
                             egui::Label::new(
                                 egui::RichText::new(&title)
@@ -2525,6 +2644,42 @@ pub fn drag_ghost(ctx: &egui::Context, palette: &Palette, locale: Locale) {
                     });
                 });
         });
+}
+
+/// Compact metadata pill inside a top-track row (e.g. local play counter or popularity).
+fn row_stat_pill(
+    ui: &mut Ui,
+    palette: &Palette,
+    icon: Icon,
+    label: &str,
+    fill: Color32,
+    fg: Color32,
+    tooltip: &str,
+) {
+    let font = theme::medium(11.5);
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, fg);
+    let w = galley.size().x + 26.0;
+    let h = 22.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, CornerRadius::same(11), fill);
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(11),
+            Stroke::new(1.0, palette.outline.gamma_multiply(0.75)),
+            egui::StrokeKind::Inside,
+        );
+        icon.image(fg, 12.0).paint_at(
+            ui,
+            Rect::from_center_size(pos2(rect.left() + 11.0, rect.center().y), Vec2::splat(12.0)),
+        );
+        ui.painter().galley(
+            pos2(rect.left() + 20.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            fg,
+        );
+    }
+    response.on_hover_text(tooltip);
 }
 
 /// Marks a song smart shuffle wove into the play order. Without it a
@@ -3048,17 +3203,93 @@ pub fn card(
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct ShelfScrollMetrics {
+    offset: f32,
+    viewport_w: f32,
+    content_w: f32,
+}
+
+fn shelf_metrics_id(id: &str) -> egui::Id {
+    egui::Id::new(("shelf-scroll-metrics", id))
+}
+
+fn shelf_step_id(id: &str) -> egui::Id {
+    egui::Id::new(("shelf-scroll-step", id))
+}
+
+fn shelf_header_controls(ui: &mut Ui, palette: &Palette, locale: Locale, id: &str) {
+    let metrics = ui
+        .ctx()
+        .data(|data| data.get_temp::<ShelfScrollMetrics>(shelf_metrics_id(id)))
+        .unwrap_or_default();
+    let max_offset = (metrics.content_w - metrics.viewport_w).max(0.0);
+    if max_offset <= 2.0 {
+        return;
+    }
+    let can_left = metrics.offset > 2.0;
+    let can_right = metrics.offset < max_offset - 2.0;
+    let step = (metrics.viewport_w * 0.72).max(CARD_WIDTH * 2.0);
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        let right_resp = ui
+            .add_enabled_ui(can_right, |ui| {
+                theme::icon_button(
+                    ui,
+                    Icon::ChevronRight,
+                    15.0,
+                    if can_right {
+                        palette.secondary
+                    } else {
+                        palette.dim
+                    },
+                    palette.text,
+                    &gettext(locale, "Scroll right"),
+                )
+            })
+            .inner;
+        if can_right && right_resp.clicked() {
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(shelf_step_id(id), step));
+        }
+        let left_resp = ui
+            .add_enabled_ui(can_left, |ui| {
+                theme::icon_button(
+                    ui,
+                    Icon::ChevronLeft,
+                    15.0,
+                    if can_left {
+                        palette.secondary
+                    } else {
+                        palette.dim
+                    },
+                    palette.text,
+                    &gettext(locale, "Scroll left"),
+                )
+            })
+            .inner;
+        if can_left && left_resp.clicked() {
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(shelf_step_id(id), -step));
+        }
+    });
+}
+
 /// A horizontal shelf of cards with a title.
 pub fn shelf(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     id: &str,
     title: &str,
     add_contents: impl FnOnce(&mut Ui),
 ) {
     ui.add_space(8.0);
-    theme::section_title(ui, palette, title);
-    shelf_cards(ui, id, add_contents);
+    ui.horizontal(|ui| {
+        theme::section_title(ui, palette, title);
+        shelf_header_controls(ui, palette, locale, id);
+    });
+    shelf_cards(ui, palette, id, add_contents);
 }
 
 /// A shelf whose title opens a page, as Your top songs does; true when the
@@ -3066,30 +3297,86 @@ pub fn shelf(
 pub fn linked_shelf(
     ui: &mut Ui,
     palette: &Palette,
+    locale: Locale,
     id: &str,
     title: &str,
     add_contents: impl FnOnce(&mut Ui),
 ) -> bool {
     ui.add_space(8.0);
-    let clicked = theme::link(ui, title, theme::bold(17.0), palette.text).clicked();
-    shelf_cards(ui, id, add_contents);
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        clicked = theme::link(ui, title, theme::bold(17.0), palette.text).clicked();
+        shelf_header_controls(ui, palette, locale, id);
+    });
+    shelf_cards(ui, palette, id, add_contents);
     clicked
 }
 
-fn shelf_cards(ui: &mut Ui, id: &str, add_contents: impl FnOnce(&mut Ui)) {
+fn shelf_cards(ui: &mut Ui, _palette: &Palette, id: &str, add_contents: impl FnOnce(&mut Ui)) {
     ui.add_space(4.0);
-    crate::autoscroll::show(
-        ui,
-        egui::ScrollArea::horizontal().id_salt(id),
-        egui::Vec2b::new(true, false),
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = CARD_GAP / 2.0;
-                add_contents(ui);
-            });
-        },
-    );
-    ui.add_space(12.0);
+    let prev = ui
+        .ctx()
+        .data(|data| data.get_temp::<ShelfScrollMetrics>(shelf_metrics_id(id)))
+        .unwrap_or_default();
+    let step = ui
+        .ctx()
+        .data_mut(|data| data.remove_temp::<f32>(shelf_step_id(id)));
+    let max_offset = (prev.content_w - prev.viewport_w).max(0.0);
+    let scoped = ui.scope(|ui| {
+        // Reserve space beneath card subtitles so horizontal scroll bars never
+        // collide with text, while keeping the handle thin and muted.
+        ui.style_mut().spacing.scroll = egui::style::ScrollStyle {
+            bar_width: 4.5,
+            floating_width: 4.5,
+            floating_allocated_width: 0.0,
+            handle_min_length: 36.0,
+            bar_inner_margin: 8.0,
+            bar_outer_margin: 2.0,
+            dormant_background_opacity: 0.0,
+            dormant_handle_opacity: 0.16,
+            active_background_opacity: 0.08,
+            active_handle_opacity: 0.50,
+            interact_handle_opacity: 0.85,
+            foreground_color: false,
+            ..egui::style::ScrollStyle::solid()
+        };
+        let mut area = egui::ScrollArea::horizontal().id_salt(id);
+        if let Some(delta) = step {
+            area = area.horizontal_scroll_offset((prev.offset + delta).clamp(0.0, max_offset));
+        }
+        crate::autoscroll::show(
+            ui,
+            area,
+            egui::Vec2b::new(true, false),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = CARD_GAP / 2.0;
+                    add_contents(ui);
+                });
+            },
+        )
+    });
+    let scroll = scoped.inner;
+    ui.ctx().data_mut(|data| {
+        data.insert_temp(
+            shelf_metrics_id(id),
+            ShelfScrollMetrics {
+                offset: scroll.state.offset.x,
+                viewport_w: scroll.inner_rect.width(),
+                content_w: scroll.content_size.x,
+            },
+        );
+    });
+    // ScrollAreaOutput::inner_rect is saved before ScrollArea::end resolves the
+    // cross axis, which can leave it collapsed on scrolled parent views; use the
+    // laid-out outer rect (including the scrollbar) clipped to the viewport.
+    let rect = scoped.response.rect.intersect(ui.clip_rect());
+    if rect.is_positive()
+        && (scroll.content_size.x > scroll.inner_rect.width() + 0.5 || scroll.state.offset.x > 0.5)
+    {
+        super::keys::note_horizontal_scroll(ui, rect);
+    }
+    ui.add_space(10.0);
 }
 
 /// A wrapping grid of cards.
@@ -3503,21 +3790,31 @@ pub fn chip_row(
     fill: egui::Color32,
     add_contents: impl FnOnce(&mut Ui),
 ) {
-    let row = ui
-        .scope(|ui| {
-            ui.style_mut().always_scroll_the_only_direction = true;
-            egui::ScrollArea::horizontal()
-                .id_salt(id)
-                .animated(false)
-                .auto_shrink([false, true])
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                .show(ui, |ui| {
-                    ui.horizontal(add_contents);
-                })
-        })
-        .inner;
+    let scoped = ui.scope(|ui| {
+        ui.style_mut().always_scroll_the_only_direction = true;
+        egui::ScrollArea::horizontal()
+            .id_salt(id)
+            .animated(false)
+            .auto_shrink([false, true])
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| {
+                ui.horizontal(add_contents);
+            })
+    });
+    let row = scoped.inner;
     let rect = row.inner_rect;
+    let outer_rect = scoped.response.rect.intersect(ui.clip_rect());
+    let hit_rect = if outer_rect.is_positive() {
+        outer_rect
+    } else {
+        rect
+    };
     let hidden = row.content_size.x - row.state.offset.x - rect.width();
+    if hit_rect.is_positive()
+        && (row.content_size.x > rect.width() + 0.5 || row.state.offset.x > 0.5)
+    {
+        super::keys::note_horizontal_scroll(ui, hit_rect);
+    }
     if hidden > 0.5 {
         let fade = Rect::from_min_max(pos2(rect.right() - CHIP_FADE, rect.top()), rect.max);
         let mut mesh = egui::Mesh::default();
@@ -3628,6 +3925,13 @@ pub fn search_field(
             rect,
             height / 2.0,
             Stroke::new(1.5, palette.text.gamma_multiply(0.6)),
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        ui.painter().rect_stroke(
+            rect,
+            height / 2.0,
+            Stroke::new(1.0, palette.outline),
             egui::StrokeKind::Inside,
         );
     }

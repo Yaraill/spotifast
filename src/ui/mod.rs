@@ -15,6 +15,7 @@ mod lyrics;
 pub mod new_releases;
 pub mod player_bar;
 mod prerelease;
+pub mod profile;
 pub mod queue;
 pub mod radio;
 pub mod search;
@@ -39,7 +40,8 @@ use crate::theme::{self, Icon};
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let ctx = &ctx;
-    keys::handle(app, ctx);
+    keys::handle_keys(app, ctx);
+    keys::clear_horizontal_scroll_rects(ctx);
     for path in winamp::dropped_skins(ctx) {
         app.actions.push(Action::InstallSkin(path));
     }
@@ -70,6 +72,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     #[cfg(feature = "milkdrop")]
     if app.immersive() {
+        let saved_palette = app.begin_effective_palette(ui);
         if lyrics::immersive(app, ui) {
             player_bar::show(app, ui);
         }
@@ -77,8 +80,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         devices::popup(app, ctx);
         dialogs::show(app, ctx);
         toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
+        keys::handle_touchpad(app, ctx);
+        app.end_effective_palette(saved_palette);
         return;
     }
+    let saved_palette = app.begin_effective_palette(ui);
     if titlebar_spans_window(cfg!(target_os = "macos"), fastframe_titlebar::enabled()) {
         fastframe_titlebar::drag(
             ui,
@@ -95,7 +101,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if app.lyrics_fullscreen.is_some() {
         lyrics::fullscreen(app, ui);
     } else {
-        if app.settings.sidebar_visible {
+        if app.settings.effective_sidebar_mode() != crate::settings::SidebarMode::Hidden {
             sidebar::show(app, ui);
         }
         if app.show_queue_panel {
@@ -117,12 +123,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
     caption_buttons(ui, &app.palette, app.locale);
     fastframe_titlebar::resize(ui);
+    keys::handle_touchpad(app, ctx);
+    app.end_effective_palette(saved_palette);
 }
 
 /// The main window's narrowest width with these panels open: their least
 /// widths and the page's.
-fn main_min_width(page: f32, sidebar: bool, right_panel: bool) -> f32 {
-    let sidebar = if sidebar { SIDEBAR_MIN_WIDTH } else { 0.0 };
+fn main_min_width(page: f32, sidebar: crate::settings::SidebarMode, right_panel: bool) -> f32 {
+    let sidebar = match sidebar {
+        crate::settings::SidebarMode::Expanded => SIDEBAR_MIN_WIDTH,
+        crate::settings::SidebarMode::Rail => theme::SIDEBAR_RAIL_WIDTH,
+        crate::settings::SidebarMode::Hidden => 0.0,
+    };
     let right = if right_panel {
         theme::SIDE_PANEL_MIN_WIDTH
     } else {
@@ -148,9 +160,14 @@ fn keep_room_for_panels(app: &App, ctx: &Context) {
         return;
     }
     let panels = app.lyrics_fullscreen.is_none();
+    let sidebar = if panels {
+        app.settings.effective_sidebar_mode()
+    } else {
+        crate::settings::SidebarMode::Hidden
+    };
     let width = main_min_width(
         topbar::least_width(ctx),
-        panels && app.settings.sidebar_visible,
+        sidebar,
         panels && (app.show_queue_panel || app.show_lyrics_panel || app.show_friends_panel),
     )
     .round();
@@ -296,19 +313,33 @@ fn page_tint(app: &mut App) -> Option<Color32> {
         return None;
     }
     match image {
-        Some(url) => app.tint_for(Some(&url)).or_else(|| app.now_playing_tint()),
-        None => app.now_playing_tint(),
+        Some(url) => app
+            .tint_for(Some(&url))
+            .or_else(|| app.resolved_now_playing_tint()),
+        None => app.resolved_now_playing_tint(),
     }
 }
 
 fn central(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let tint = page_tint(app);
+    let gap = theme::FLOATING_GAP as i8;
+    let half_gap = (theme::FLOATING_GAP / 2.0) as i8;
+    let has_sidebar = app.settings.effective_sidebar_mode() != crate::settings::SidebarMode::Hidden;
+    let has_right = app.show_queue_panel || app.show_lyrics_panel || app.show_friends_panel;
+    let margin = Margin {
+        left: if has_sidebar { half_gap } else { gap },
+        right: if has_right { half_gap } else { gap },
+        top: gap,
+        bottom: half_gap,
+    };
     egui::CentralPanel::default()
-        .frame(Frame::new().fill(palette.window))
+        .frame(Frame::new().fill(palette.window).inner_margin(margin))
         .show(ui, |ui| {
             let rect = ui.max_rect();
+            theme::paint_floating_panel(ui, &palette, rect);
             let page = app.page().clone();
+            let page_key = page.encode();
             let overview = matches!(
                 page,
                 Page::Home | Page::Search | Page::Settings | Page::Queue
@@ -316,7 +347,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
             // The wash belongs to the page's hero, so it scrolls away with
             // it. The page's offset is known once it has been laid out, so
             // the previous frame's serves.
-            let scrolled_id = Id::new(("page-scrolled", page.encode()));
+            let scrolled_id = Id::new(("page-scrolled", &page_key));
             let scrolled = ui
                 .ctx()
                 .data(|data| data.get_temp::<f32>(scrolled_id))
@@ -325,8 +356,28 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                 if app.album_pages.get(id).is_some_and(|page| page.prerelease.is_some()));
             // Countdown pages own their hero gradient. The generic artwork wash
             // otherwise leaves an unrelated color band behind the search bar.
-            if !countdown && let Some((top, bottom)) = header_wash(&palette, overview, tint) {
-                widgets::paint_vertical_gradient(ui, header_rect(rect, scrolled), top, bottom);
+            if !countdown {
+                let intensity = if app.settings.accent_from_art {
+                    app.settings.tint_intensity.percent()
+                } else {
+                    100
+                };
+                let target_top = header_wash(&palette, overview, intensity, tint)
+                    .map(|(top, _)| top)
+                    .unwrap_or(palette.panel);
+                let top = theme::ease_color(
+                    ui.ctx(),
+                    Id::new(("central-header-wash", &page_key, palette.dark)),
+                    target_top,
+                    theme::ART_EASE_SECONDS,
+                );
+                if top != palette.panel {
+                    let wash_rect =
+                        header_rect(rect.shrink(1.0), scrolled).intersect(rect.shrink(1.0));
+                    if wash_rect.height() > 0.0 {
+                        widgets::paint_vertical_gradient(ui, wash_rect, top, palette.panel);
+                    }
+                }
             }
             ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
             // egui fades a scrolled page's edge into the panel's plain
@@ -345,7 +396,6 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                     slow_banner(app, ui);
                 }
             }
-            let page_key = page.encode();
             let mut area = egui::ScrollArea::vertical()
                 .id_salt(("page", &page_key))
                 .auto_shrink([false, false]);
@@ -366,6 +416,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                             Page::Home => home::show(app, ui),
                             Page::TopSongs => collection::top_songs(app, ui),
                             Page::NewReleases => new_releases::page(app, ui),
+                            Page::WhatsNew => new_releases::whats_new(app, ui),
                             Page::Search => search::show(app, ui),
                             Page::LikedSongs => collection::liked(app, ui),
                             Page::Albums | Page::Artists | Page::Podcasts | Page::Episodes => {
@@ -374,6 +425,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                             Page::Playlist(id) => collection::playlist(app, ui, &id),
                             Page::Album(id) => collection::album(app, ui, &id),
                             Page::Artist(id) => artist::show(app, ui, &id),
+                            Page::UserProfile(id) => profile::show(app, ui, &id),
                             Page::Show(id) => show::show(app, ui, &id),
                             Page::Radio(seed) => radio::radio(app, ui, &seed),
                             Page::Queue => queue::page(app, ui),
@@ -546,17 +598,28 @@ fn banner(
 }
 
 /// The gradient behind a page's header, top to bottom: the art's colour
-/// blended into the window, stronger on a cover's own page than on an
+/// blended cleanly into the panel surface, stronger on a cover's own page than on an
 /// overview, or else the palette's `tint` fading out, whose alpha is its
-/// strength. `None` leaves the plain window.
+/// strength. `None` leaves the plain panel.
 fn header_wash(
     palette: &theme::Palette,
     overview: bool,
+    intensity: u8,
     art: Option<Color32>,
 ) -> Option<(Color32, Color32)> {
     if let Some(art) = art {
-        let strength = if overview { 0.45 } else { 0.85 };
-        return Some((blend(palette.window, art, strength), palette.window));
+        let strength = if overview {
+            theme::tint_curve(intensity, 0.42, 0.72, 0.80)
+        } else {
+            // Cover pages always carry a readable hero wash whenever art tinting is enabled.
+            if intensity == 0 {
+                0.0
+            } else {
+                theme::tint_curve(intensity, 0.66, 0.86, 0.90)
+            }
+        };
+        return (strength > 0.0)
+            .then_some((blend(palette.panel, art, strength), palette.panel));
     }
     (palette.tint.a() > 0).then_some((palette.tint, Color32::TRANSPARENT))
 }
@@ -689,6 +752,34 @@ fn caption_buttons(ui: &mut egui::Ui, palette: &theme::Palette, locale: crate::i
         close: &close,
     };
     fastframe_titlebar::controls(ui, &style, &labels);
+}
+
+/// Shared outer margin frame for docked right-hand side panels.
+pub(super) fn floating_right_panel_frame(palette: &theme::Palette) -> Frame {
+    let gap = theme::FLOATING_GAP as i8;
+    Frame::new().fill(palette.window).inner_margin(Margin {
+        left: 3,
+        right: gap,
+        top: gap,
+        bottom: 3,
+    })
+}
+
+/// Paints the rounded card backdrop inside a floating right panel and provides inner content padding.
+pub(super) fn paint_floating_right_panel(
+    ui: &mut egui::Ui,
+    palette: &theme::Palette,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    theme::paint_floating_panel(ui, palette, ui.max_rect());
+    Frame::new()
+        .inner_margin(Margin {
+            left: 10,
+            right: 10,
+            top: 10,
+            bottom: 8,
+        })
+        .show(ui, add_contents);
 }
 
 pub fn blend(base: Color32, tint: Color32, amount: f32) -> Color32 {
@@ -826,21 +917,26 @@ mod tests {
     #[test]
     fn the_header_fades_from_the_art_or_the_palettes_wash() {
         let mut palette = theme::Palette::dark();
-        assert_eq!(header_wash(&palette, false, None), None);
+        assert_eq!(header_wash(&palette, false, 40, None), None);
 
         let art = Color32::from_rgb(0x50, 0x38, 0xc8);
-        let (page, _) = header_wash(&palette, false, Some(art)).unwrap();
-        let (overview, _) = header_wash(&palette, true, Some(art)).unwrap();
-        assert_eq!(page, blend(palette.window, art, 0.85));
-        assert_eq!(overview, blend(palette.window, art, 0.45));
+        let (page, _) = header_wash(&palette, false, 40, Some(art)).unwrap();
+        let (overview, _) = header_wash(&palette, true, 40, Some(art)).unwrap();
+        assert_eq!(page, blend(palette.panel, art, 0.66));
+        assert_eq!(overview, blend(palette.panel, art, 0.42));
+        assert_eq!(
+            header_wash(&palette, true, 80, Some(art)).unwrap().0,
+            blend(palette.panel, art, 0.72)
+        );
+        assert_eq!(header_wash(&palette, true, 0, Some(art)), None);
 
         palette.tint = Color32::from_black_alpha(24);
         assert_eq!(
-            header_wash(&palette, false, None),
+            header_wash(&palette, false, 40, None),
             Some((palette.tint, Color32::TRANSPARENT))
         );
         assert_eq!(
-            header_wash(&palette, false, Some(art)).unwrap().0,
+            header_wash(&palette, false, 40, Some(art)).unwrap().0,
             page,
             "art wins over the wash"
         );

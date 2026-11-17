@@ -4044,3 +4044,227 @@ msgstr ""
 #: src/ui/widgets.rs:2535
 msgid "Suggested by smart shuffle"
 msgstr ""
+
+#: src/ui/sidebar.rs:1132
+msgid "Collapse sidebar (Ctrl+B)"
+msgstr ""
+
+#: src/ui/sidebar.rs:1133
+msgid "Collapse sidebar (Cmd+B)"
+msgstr ""
+
+#: src/model.rs:808
+msgctxt "home filter"
+msgid "Music"
+msgstr ""
+
+#: src/model.rs:810
+msgctxt "home filter"
+msgid "Top"
+msgstr ""
+
+#: src/settings.rs:140
+msgctxt "player bar"
+msgid "Pill"
+msgstr ""
+
+#: src/settings.rs:141
+msgctxt "player bar"
+msgid "Wide"
+msgstr ""
+
+#: src/settings.rs:142
+msgctxt "player bar"
+msgid "Classic"
+msgstr ""
+
+#: src/settings.rs:162
+msgctxt "album colour"
+msgid "Vivid"
+msgstr ""
+
+#: src/settings.rs:163
+msgctxt "album colour"
+msgid "Balanced"
+msgstr ""
+
+#: src/ui/home.rs:526
+msgctxt "home"
+msgid "Live radio"
+msgstr ""
+
+#: src/ui/settings.rs:1424
+msgid "Player bar style"
+msgstr ""
+
+#: src/ui/settings.rs:1427
+msgid "Choose a floating pill, rounded bar, or classic edge-to-edge layout."
+msgstr ""
+
+#: src/ui/settings.rs:1431
+msgid "Album colour intensity"
+msgstr ""
+
+#: src/ui/settings.rs:1434
+msgid "Control how strongly the playing cover colours surfaces and accents."
+msgstr ""
+
+#: src/ui/settings.rs:1438
+msgid "Touchpad swipe navigation"
+msgstr ""
+
+#: src/ui/settings.rs:1441
+msgid "Swipe horizontally with two fingers on a touchpad to go back or forward."
+msgstr ""
+
+msgid "Top songs & Friends"
+msgstr ""
+
+msgid "Spotifast pulse"
+msgstr ""
+
+msgid "More from artist"
+msgstr ""
+
+msgid "More quick access"
+msgstr ""
+
+msgid "Customize home"
+msgstr ""
+
+msgid "Lock layout"
+msgstr ""
+
+msgid "Reset"
+msgstr ""
+
+msgid "Drag to reorder"
+msgstr ""
+
+msgid "Explicit"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "All time"
+msgstr ""
+
+msgid "Nothing new yet"
+msgstr ""
+
+msgid "What's New"
+msgstr ""
+
+msgid "The latest releases from artists and podcasts you follow."
+msgstr ""
+
+msgid "New music and podcast episodes from artists and shows you follow will show here."
+msgstr ""
+
+#, rust-format
+msgid "{time} left"
+msgstr ""
+
+msgid "Play all"
+msgstr ""
+
+msgid "Spotify popularity and release year"
+msgstr ""
+
+msgid "Your plays in Spotifast on this device"
+msgstr ""
+
+msgid "Activity"
+msgstr ""
+
+msgid "All time (this device)"
+msgstr ""
+
+#, rust-format
+msgid "New followers (+{count})"
+msgstr ""
+
+msgid "Plays in your listening history"
+msgstr ""
+
+msgid "Scroll left"
+msgstr ""
+
+msgid "Scroll right"
+msgstr ""
+
+msgid "Today (all songs)"
+msgstr ""
+
+#, rust-format
+msgid "Total followers: {total}"
+msgstr ""
+
+#, rust-format
+msgid "{count} new songs • {total} tracks"
+msgstr ""
+
+msgid "Private session enabled for 6 hours"
+msgstr ""
+
+msgid "Private session ended"
+msgstr ""
+
+msgid "Private session"
+msgstr ""
+
+msgid "End private session"
+msgstr ""
+
+msgid "Profile"
+msgstr ""
+
+msgid "Public playlists"
+msgstr ""
+
+msgid "Recently played artists"
+msgstr ""
+
+msgid "Recently listened"
+msgstr ""
+
+msgid "No public playlists"
+msgstr ""
+
+msgid "This profile has no public playlists yet."
+msgstr ""
+
+msgid "You"
+msgstr ""
+
+#, rust-format
+msgid "{count} following"
+msgstr ""
+
+#, rust-format
+msgid "{count} public playlist"
+msgid_plural "{count} public playlists"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "No activity yet"
+msgstr ""
+
+msgid "New followers and songs added to your playlists will show here."
+msgstr ""
+
+msgid "This week"
+msgstr ""
+
+msgid "Monday to Sunday. Click to show all time."
+msgstr ""
+
+msgid "Click to show this week."
+msgstr ""
+
+msgid "Last 7 days"
+msgstr ""
+
+msgid "Calculated from your listening over the last 7 days."
+msgstr ""

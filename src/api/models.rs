@@ -850,6 +850,8 @@ pub struct User {
     pub country: Option<String>,
     #[serde(default)]
     pub uri: Option<String>,
+    #[serde(default)]
+    pub followers: Option<Followers>,
 }
 
 impl User {

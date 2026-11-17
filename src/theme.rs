@@ -38,6 +38,32 @@ pub struct Palette {
     pub tint: Color32,
 }
 
+/// Piecewise-linear interpolation along `(0%, 40%, 80%, 100%)` intensity stops.
+pub fn tint_curve(percent: u8, s40: f32, s80: f32, s100: f32) -> f32 {
+    if percent == 0 {
+        return 0.0;
+    }
+    let p = f32::from(percent.min(100));
+    if p <= 40.0 {
+        s40 * (p / 40.0)
+    } else if p <= 80.0 {
+        s40 + (s80 - s40) * ((p - 40.0) / 40.0)
+    } else {
+        s80 + (s100 - s80) * ((p - 80.0) / 20.0)
+    }
+}
+
+fn scale_rgb(color: Color32, factor: f32) -> Color32 {
+    if (factor - 1.0).abs() < 0.001 {
+        return color;
+    }
+    Color32::from_rgb(
+        (f32::from(color.r()) * factor).round().clamp(0.0, 255.0) as u8,
+        (f32::from(color.g()) * factor).round().clamp(0.0, 255.0) as u8,
+        (f32::from(color.b()) * factor).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
 impl Palette {
     pub fn dark() -> Self {
         Self {
@@ -85,13 +111,42 @@ impl Palette {
         }
     }
 
+    pub fn spotifast_modern() -> Self {
+        Self {
+            dark: true,
+            window: Color32::from_rgb(0x0b, 0x0c, 0x10),
+            panel: Color32::from_rgb(0x13, 0x15, 0x1c),
+            surface: Color32::from_rgb(0x1b, 0x1f, 0x28),
+            surface_hover: Color32::from_rgb(0x25, 0x2a, 0x36),
+            surface_active: Color32::from_rgb(0x2e, 0x34, 0x43),
+            outline: Color32::from_rgb(0x2a, 0x30, 0x3e),
+            text: Color32::from_rgb(0xf4, 0xf6, 0xf9),
+            secondary: Color32::from_rgb(0xad, 0xb5, 0xc2),
+            dim: Color32::from_rgb(0x70, 0x79, 0x89),
+            accent: Color32::from_rgb(0x1e, 0xd7, 0x60),
+            accent_hover: Color32::from_rgb(0x3c, 0xe8, 0x7a),
+            on_accent: Color32::from_rgb(0x0a, 0x14, 0x0e),
+            danger: Color32::from_rgb(0xf5, 0x71, 0x7f),
+            warning: Color32::from_rgb(0xf2, 0xb8, 0x5c),
+            overlay: Color32::from_rgb(0x20, 0x25, 0x30),
+            shadow: Color32::from_black_alpha(150),
+            tint: Color32::from_rgba_unmultiplied(0x1e, 0xd7, 0x60, 22),
+        }
+    }
+
     /// A colour derived from album art, softened so it can sit behind text.
     pub fn tint_from_art(&self, rgb: [u8; 3]) -> Color32 {
         let [r, g, b] = rgb.map(|c| c as f32 / 255.0);
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
         let lightness = (max + min) / 2.0;
-        let target = if self.dark { 0.30 } else { 0.72 };
+        let chroma = max - min;
+        // Keep dark-mode art tints deep enough that Vivid lifts atmosphere without turning blacks milky grey.
+        let target = if self.dark {
+            if chroma < 0.08 { 0.15 } else { 0.27 }
+        } else {
+            0.74
+        };
         let (r, g, b) = if lightness < 0.01 {
             (target, target, target)
         } else {
@@ -104,6 +159,235 @@ impl Palette {
         };
         Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
     }
+
+    /// True when the extracted artwork bucket has enough chroma to drive a cover accent.
+    pub fn rgb_has_hue(rgb: [u8; 3]) -> bool {
+        let max = rgb[0].max(rgb[1]).max(rgb[2]);
+        let min = rgb[0].min(rgb[1]).min(rgb[2]);
+        f32::from(max - min) / 255.0 >= 0.08
+    }
+
+    /// Blends two opaque RGB colours linearly in RGBA space.
+    pub fn blend_color(base: Color32, tint: Color32, amount: f32) -> Color32 {
+        let t = amount.clamp(0.0, 1.0);
+        let a = egui::Rgba::from(base);
+        let b = egui::Rgba::from(tint);
+        let mut color = Color32::from(a * (1.0 - t) + b * t);
+        color[3] = 255;
+        color
+    }
+
+    /// Saturated, high-contrast accent colour derived from album artwork.
+    pub fn vibrant_accent_from_art(&self, rgb: [u8; 3]) -> Color32 {
+        let [r, g, b] = rgb.map(|c| c as f32 / 255.0);
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        if delta < 0.08 {
+            return self.accent;
+        }
+        let l = (max + min) / 2.0;
+        let s = if l > 0.5 {
+            delta / (2.0 - max - min)
+        } else {
+            delta / (max + min)
+        };
+        let mut h = if (max - r).abs() < f32::EPSILON {
+            ((g - b) / delta) + if g < b { 6.0 } else { 0.0 }
+        } else if (max - g).abs() < f32::EPSILON {
+            (b - r) / delta + 2.0
+        } else {
+            (r - g) / delta + 4.0
+        };
+        h /= 6.0;
+
+        let target_s = s.clamp(0.58, 0.90);
+        let target_l = if self.dark { 0.64 } else { 0.40 };
+        hsl_to_color32(h, target_s, target_l)
+    }
+
+    /// Projects this palette with the playing album cover's colour baked into
+    /// canvas, panels, surfaces, borders, and accents according to intensity.
+    pub fn with_album_art(
+        &self,
+        art_rgb: Option<[u8; 3]>,
+        art_tint: Option<Color32>,
+        intensity: crate::settings::TintIntensity,
+    ) -> Self {
+        let pct = intensity.percent();
+        if pct == 0 {
+            return *self;
+        }
+        let Some(raw_tint) = art_tint else {
+            return *self;
+        };
+        let tint = if self.dark && pct > 80 {
+            // Boost dark-mode target 0.27 -> 0.30 above 80% up to maximum intensity.
+            let extra = f32::from(pct - 80) / 20.0;
+            scale_rgb(raw_tint, 1.0 + extra * (0.30 / 0.27 - 1.0))
+        } else {
+            raw_tint
+        };
+        let mut next = *self;
+        let target_accent = art_rgb
+            .map(|rgb| self.vibrant_accent_from_art(rgb))
+            .unwrap_or(tint);
+        next.accent = target_accent;
+        next.accent_hover = Self::blend_color(
+            next.accent,
+            if self.dark {
+                Color32::WHITE
+            } else {
+                Color32::BLACK
+            },
+            0.16,
+        );
+        let lum = relative_luminance(next.accent);
+        next.on_accent = if lum > 0.34 {
+            Color32::from_rgb(0x0a, 0x10, 0x14)
+        } else {
+            Color32::WHITE
+        };
+
+        let (win_mix, panel_mix, surf_mix, hover_mix, outline_mix) = if self.dark {
+            (
+                tint_curve(pct, 0.11, 0.32, 0.38),
+                tint_curve(pct, 0.12, 0.22, 0.24),
+                tint_curve(pct, 0.16, 0.28, 0.30),
+                tint_curve(pct, 0.20, 0.34, 0.36),
+                tint_curve(pct, 0.08, 0.20, 0.24),
+            )
+        } else {
+            (
+                tint_curve(pct, 0.09, 0.18, 0.24),
+                tint_curve(pct, 0.06, 0.14, 0.16),
+                tint_curve(pct, 0.10, 0.20, 0.22),
+                tint_curve(pct, 0.14, 0.24, 0.28),
+                tint_curve(pct, 0.06, 0.14, 0.18),
+            )
+        };
+        next.window = Self::blend_color(self.window, tint, win_mix);
+        next.panel = Self::blend_color(self.panel, tint, panel_mix);
+        next.surface = Self::blend_color(self.surface, tint, surf_mix);
+        next.surface_hover = Self::blend_color(self.surface_hover, tint, hover_mix);
+        next.surface_active = Self::blend_color(self.surface_active, tint, hover_mix);
+        next.outline = Self::blend_color(self.outline, tint, outline_mix);
+        next.overlay = Self::blend_color(self.overlay, tint, panel_mix * 0.8);
+        next
+    }
+
+    /// Smoothly transitions dynamic artwork chrome & accent colours when the underlying
+    /// base theme has not changed (so theme switches stay crisp and song skips cross-fade).
+    pub fn ease_chrome(&self, ctx: &egui::Context, base: &Self) -> Self {
+        let sig = (
+            base.dark,
+            base.window.to_array(),
+            base.panel.to_array(),
+            base.accent.to_array(),
+        );
+        let mut next = *self;
+        let ease = |slot: &'static str, color: Color32| {
+            ease_color(ctx, egui::Id::new(("chrome", sig, slot)), color, ART_EASE_SECONDS)
+        };
+        next.window = ease("window", self.window);
+        next.panel = ease("panel", self.panel);
+        next.surface = ease("surface", self.surface);
+        next.surface_hover = ease("surface_hover", self.surface_hover);
+        next.surface_active = ease("surface_active", self.surface_active);
+        next.outline = ease("outline", self.outline);
+        next.overlay = ease("overlay", self.overlay);
+        next.accent = ease("accent", self.accent);
+        next.accent_hover = ease("accent_hover", self.accent_hover);
+        let lum = relative_luminance(next.accent);
+        next.on_accent = if lum > 0.34 {
+            Color32::from_rgb(0x0a, 0x10, 0x14)
+        } else {
+            Color32::WHITE
+        };
+        next
+    }
+}
+
+/// Duration for smooth artwork colour transitions across chrome, washes, and cards.
+pub const ART_EASE_SECONDS: f32 = 0.42;
+const TINT_SESSION_ID: &str = "player-bar-tint-session";
+
+/// Forget active artwork tint animations (e.g. while the sign-in screen is shown).
+pub fn end_tint_session(ctx: &egui::Context) {
+    ctx.data_mut(|data| data.remove::<u64>(egui::Id::new(TINT_SESSION_ID)));
+}
+
+/// Smoothly interpolates `target` per RGB channel across frames while keeping
+/// `target.a()`. The first frame lands directly on `target`.
+pub fn ease_color(
+    ctx: &egui::Context,
+    id: egui::Id,
+    target: Color32,
+    seconds: f32,
+) -> Color32 {
+    let duration = crate::motion::seconds(ctx, seconds);
+    // Color32 stores premultiplied RGB, so interpolate unmultiplied channels.
+    let [r, g, b, _] = target.to_srgba_unmultiplied();
+    let pass = ctx.cumulative_pass_nr();
+    let session = ctx.data_mut(|data| {
+        *data.get_temp_mut_or_insert_with(egui::Id::new(TINT_SESSION_ID), || pass)
+    });
+    let channel = |axis: &'static str, value: u8| {
+        ctx.animate_value_with_time(
+            egui::Id::new(("spotifast-ease-color", session, id, axis)),
+            f32::from(value),
+            duration,
+        )
+        .round() as u8
+    };
+    let eased = [channel("r", r), channel("g", g), channel("b", b)];
+    if eased == [r, g, b] {
+        target
+    } else {
+        Color32::from_rgba_unmultiplied(eased[0], eased[1], eased[2], target.a())
+    }
+}
+
+fn hsl_to_color32(h: f32, s: f32, l: f32) -> Color32 {
+    let hue2rgb = |p: f32, q: f32, mut t: f32| -> f32 {
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 0.5 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
+    };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let p = 2.0 * l - q;
+    let r = (hue2rgb(p, q, h + 1.0 / 3.0) * 255.0).round() as u8;
+    let g = (hue2rgb(p, q, h) * 255.0).round() as u8;
+    let b = (hue2rgb(p, q, h - 1.0 / 3.0) * 255.0).round() as u8;
+    Color32::from_rgb(r, g, b)
+}
+
+fn relative_luminance(c: Color32) -> f32 {
+    let lin = |u: u8| -> f32 {
+        let s = f32::from(u) / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
 }
 
 impl fastframe_theme::Palette for Palette {
@@ -235,6 +519,9 @@ fn status_detail(status: Option<fastframe_theme::Status>, locale: Locale) -> Cow
 
 pub const RADIUS: u8 = 8;
 pub const RADIUS_SMALL: u8 = 4;
+pub const FLOATING_GAP: f32 = 6.0;
+pub const FLOATING_RADIUS: u8 = 14;
+pub const SIDEBAR_RAIL_WIDTH: f32 = 68.0;
 pub const ROW_HEIGHT: f32 = 56.0;
 pub const COMPACT_ROW_HEIGHT: f32 = 48.0;
 /// The compact track list: one line, no cover.
@@ -450,6 +737,7 @@ fastframe_icons::icons! {
         ArrowRight => "arrow-right",
         AudioLines => "audio-lines",
         BadgeCheck => "badge-check",
+        Bell => "bell",
         Bookmark => "bookmark",
         BookmarkFilled => "bookmark-filled",
         Car => "car",
@@ -491,6 +779,7 @@ fastframe_icons::icons! {
         ListVideo => "list-video",
         Loader => "loader-circle",
         Lock => lucide "lock",
+        LockOpen => "lock-open",
         LogOut => lucide "log-out",
         Mic => lucide "mic",
         Minus => lucide "minus",
@@ -863,6 +1152,105 @@ fn soft_button_inner(
         focus_ring(ui, &dismiss);
     }
     (response, dismissed)
+}
+
+/// Width of an [`accent_chip`] label pill, for adaptive layout budgeting.
+pub fn accent_chip_width(ui: &egui::Ui, label: &str) -> f32 {
+    let galley = crate::bidi::layout_line(ui.painter(), label, medium(12.5), Color32::WHITE);
+    galley.size().x + 22.0
+}
+
+/// Pill filter button that highlights with `palette.accent` when active.
+pub fn accent_chip(ui: &mut egui::Ui, palette: &Palette, label: &str, active: bool) -> Response {
+    let font = medium(12.5);
+    let color = if active {
+        palette.on_accent
+    } else {
+        palette.secondary
+    };
+    let galley = crate::bidi::layout_line(ui.painter(), label, font, color);
+    let padding = Vec2::new(11.0, 5.5);
+    let size = galley.size() + padding * 2.0;
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), active, label)
+    });
+    if ui.is_rect_visible(rect) {
+        let hovered = response.hovered();
+        let fill = if active {
+            if hovered {
+                palette.accent_hover
+            } else {
+                palette.accent
+            }
+        } else if hovered {
+            palette.surface_hover
+        } else {
+            palette.surface
+        };
+        let radius = rect.height() / 2.0;
+        ui.painter().rect_filled(rect, radius, fill);
+        if !active {
+            ui.painter().rect_stroke(
+                rect,
+                radius,
+                Stroke::new(1.0, palette.outline),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let text_color = if active {
+            palette.on_accent
+        } else if hovered {
+            palette.text
+        } else {
+            palette.secondary
+        };
+        let pos = rect.center() - galley.size() / 2.0;
+        ui.painter().galley(pos, galley, text_color);
+    }
+    focus_ring(ui, &response);
+    response
+}
+
+/// Paints a rounded floating surface card inside a docked panel container.
+pub fn paint_floating_panel(ui: &egui::Ui, palette: &Palette, rect: egui::Rect) {
+    let radius = CornerRadius::same(FLOATING_RADIUS);
+    ui.painter().rect_filled(rect, radius, palette.panel);
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        Stroke::new(1.0, palette.outline),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// Draws three compact equalizer bars indicating active playback inside `rect`.
+pub fn paint_eq_bars(ui: &egui::Ui, rect: egui::Rect, color: Color32, playing: bool) {
+    let bars = 3usize;
+    let gap = 2.0;
+    let bar_w = ((rect.width() - gap * (bars - 1) as f32) / bars as f32).max(1.5);
+    let animate = playing;
+    let time = if animate {
+        repaint_after(ui.ctx(), std::time::Duration::from_millis(80));
+        ui.input(|i| i.time) as f32
+    } else {
+        0.0
+    };
+    for i in 0..bars {
+        let phase = i as f32 * 1.9 + 0.6;
+        let level = if animate {
+            0.35 + 0.65 * ((time * (5.2 + i as f32 * 1.1) + phase).sin() * 0.5 + 0.5)
+        } else {
+            [0.45, 0.85, 0.60][i]
+        };
+        let h = (rect.height() * level).max(3.0);
+        let x = rect.left() + i as f32 * (bar_w + gap);
+        let bar = egui::Rect::from_min_max(
+            egui::pos2(x, rect.bottom() - h),
+            egui::pos2(x + bar_w, rect.bottom()),
+        );
+        ui.painter().rect_filled(bar, CornerRadius::same(1), color);
+    }
 }
 
 /// Asks for the next frame `interval` from now.
@@ -1368,5 +1756,64 @@ mod tests {
             5.0 + interval,
             "after a pause"
         );
+    }
+
+    #[test]
+    fn vivid_album_art_preserves_dark_hierarchy_and_neutral_outlines() {
+        let dark = Palette::dark();
+        let gray_tint = dark.tint_from_art([20, 20, 20]);
+        let vivid_gray = dark.with_album_art(
+            Some([20, 20, 20]),
+            Some(gray_tint),
+            crate::settings::TintIntensity::VIVID,
+        );
+        assert!(
+            relative_luminance(vivid_gray.window) < relative_luminance(vivid_gray.panel)
+                && relative_luminance(vivid_gray.panel) < relative_luminance(vivid_gray.surface)
+                && relative_luminance(vivid_gray.surface)
+                    < relative_luminance(vivid_gray.surface_hover),
+            "Vivid dark mode must keep window < panel < surface < surface_hover contrast"
+        );
+        assert!(
+            relative_luminance(vivid_gray.panel) < 0.03,
+            "Dark panels must stay deep instead of turning milky grey"
+        );
+        assert!(
+            vivid_gray.outline.g() <= dark.outline.g().saturating_add(4),
+            "Structural outlines must not inherit bright green accent: {:?}",
+            vivid_gray.outline
+        );
+
+        let red_tint = dark.tint_from_art([200, 40, 40]);
+        let vivid_red = dark.with_album_art(
+            Some([200, 40, 40]),
+            Some(red_tint),
+            crate::settings::TintIntensity::VIVID,
+        );
+        let balanced_red = dark.with_album_art(
+            Some([200, 40, 40]),
+            Some(red_tint),
+            crate::settings::TintIntensity::BALANCED,
+        );
+        assert_ne!(
+            vivid_red.panel, balanced_red.panel,
+            "80% and 40% tint intensities should remain visually distinct"
+        );
+        assert_eq!(
+            dark.with_album_art(
+                Some([200, 40, 40]),
+                Some(red_tint),
+                crate::settings::TintIntensity::from_percent(0),
+            ),
+            dark,
+            "0% tint intensity leaves the base palette untouched"
+        );
+    }
+
+    #[test]
+    fn rgb_has_hue_distinguishes_achromatic_from_colorful_buckets() {
+        assert!(!Palette::rgb_has_hue([18, 19, 22]));
+        assert!(!Palette::rgb_has_hue([230, 230, 230]));
+        assert!(Palette::rgb_has_hue([210, 45, 130]));
     }
 }

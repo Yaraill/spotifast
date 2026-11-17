@@ -34,12 +34,12 @@ const SEARCH_FLOOR: f32 = 130.0;
 // Keep the original 80-point minimum inside the page's own toolbar.
 const SEARCH_MIN: f32 = 80.0;
 /// Everything at the right end whose width never changes: the page padding,
-/// the avatar, the gap the account menu leaves, the three icon buttons, and
-/// the spacing between them. The cursor stops at the left edge of the last
-/// button, so this counts three gaps, not four. The spinner and the badges
-/// are measured on top of it because they come and go.
+/// the avatar, the gap the account menu leaves, the four icon buttons in a
+/// zero-spacing cluster (their 12 px hit padding already spaces glyphs apart),
+/// and the single gap before the cluster. The spinner and the badges are
+/// measured on top of it because they come and go.
 const RIGHT_CONTROLS_WIDTH: f32 =
-    super::widgets::PAGE_PADDING + AVATAR_SIZE + 4.0 + 3.0 * ICON_BUTTON_SIZE + 3.0 * ITEM_SPACING;
+    super::widgets::PAGE_PADDING + AVATAR_SIZE + 4.0 + ITEM_SPACING + 4.0 * ICON_BUTTON_SIZE;
 
 /// What precedes the field until the bar has drawn once: the page padding,
 /// the back and forward buttons and the gaps after them.
@@ -204,7 +204,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         app.show_lyrics_panel,
         width,
     );
-    if !app.settings.sidebar_visible {
+    if app.settings.effective_sidebar_mode() == crate::settings::SidebarMode::Hidden {
         window_controls.topbar_top = window_controls
             .topbar_top
             .max(super::linux_left_controls_inset(ui.ctx()));
@@ -236,7 +236,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         |ui| {
             ui.add_space(super::widgets::PAGE_PADDING);
             ui.spacing_mut().item_spacing.x = ITEM_SPACING;
-            if !app.settings.sidebar_visible {
+            if app.settings.effective_sidebar_mode() == crate::settings::SidebarMode::Hidden {
                 if nav_button(
                     ui,
                     &palette,
@@ -253,7 +253,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 ui.add_space(2.0);
             }
-            if !app.settings.sidebar_visible
+            if app.settings.effective_sidebar_mode() == crate::settings::SidebarMode::Hidden
                 && nav_button(ui, &palette, Icon::House, true, &gettext(locale, "Home")).clicked()
             {
                 app.actions.push(Action::Open(Page::Home));
@@ -329,7 +329,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             };
             let controls = RIGHT_CONTROLS_WIDTH
                 - if !app.visualizers_available() {
-                    ICON_BUTTON_SIZE + ITEM_SPACING
+                    ICON_BUTTON_SIZE
                 } else {
                     0.0
                 }
@@ -351,7 +351,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let lead = width - ui.available_width() + window_controls.topbar_width;
             ui.ctx().data_mut(|data| data.insert_temp(lead_id(), lead));
             let fit = topbar_fit(search_room, controls, badges(true), badges(false));
-            let search_width = fit.search;
+            let active_badges = if fit.labels {
+                badges(true)
+            } else {
+                badges(false)
+            };
+            let free_between = (search_room - controls - active_badges).max(0.0);
+            let on_home = matches!(app.page(), Page::Home);
+            let chip_labels: [std::borrow::Cow<'static, str>; 4] =
+                std::array::from_fn(|index| crate::model::HomeFilter::ALL[index].label(locale));
+            let chips_width: f32 = chip_labels
+                .iter()
+                .map(|label| theme::accent_chip_width(ui, label))
+                .sum::<f32>()
+                + (chip_labels.len().saturating_sub(1) as f32) * 6.0;
+            let show_home_chips = on_home && free_between >= SEARCH_FLOOR + chips_width + 24.0;
+            let search_width = if show_home_chips {
+                fit.search
+                    .min((free_between - chips_width - 24.0).max(SEARCH_FLOOR))
+            } else {
+                fit.search
+            };
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(egui::Id::new("home-topbar-chips-shown"), show_home_chips);
+            });
             let id = egui::Id::new("global-search");
             let before = app.search.query.clone();
             let selected = egui::TextEdit::load_state(ui.ctx(), id)
@@ -393,6 +416,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
             if response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                 response.surrender_focus();
+            }
+            if show_home_chips {
+                ui.add_space(4.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for (filter, label) in crate::model::HomeFilter::ALL.into_iter().zip(&chip_labels) {
+                    let selected = app.home.filter == filter;
+                    if theme::accent_chip(ui, &palette, label, selected).clicked() && !selected {
+                        app.actions.push(Action::SetHomeFilter(filter));
+                    }
+                }
+                ui.spacing_mut().item_spacing.x = ITEM_SPACING;
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -459,9 +493,28 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             );
                         }
                     }
+                    if app.is_private_session() {
+                        let badge_center = rect.right_bottom() - egui::vec2(5.0, 5.0);
+                        ui.painter()
+                            .circle_filled(badge_center, 8.5, palette.window);
+                        ui.painter()
+                            .circle_filled(badge_center, 7.0, palette.accent);
+                        theme::paint_icon(
+                            ui,
+                            Icon::EyeOff,
+                            egui::Rect::from_center_size(badge_center, Vec2::splat(10.0)),
+                            10.0,
+                            palette.on_accent,
+                        );
+                    }
                 }
                 theme::focus_ring(ui, &response);
-                let response = response.on_hover_text(&name);
+                let account_tip = if app.is_private_session() {
+                    format!("{name}\n{}", gettext(locale, "Private session"))
+                } else {
+                    name.clone()
+                };
+                let response = response.on_hover_text(account_tip);
                 egui::Popup::menu(&response)
                     .frame(super::widgets::menu_frame(&palette))
                     .align(egui::RectAlign::BOTTOM_END)
@@ -489,6 +542,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             });
                         });
                         super::widgets::menu_separator(ui, &palette);
+                        if let Some(user_id) = app.user_id().map(str::to_string)
+                            && super::widgets::menu_item(
+                                ui,
+                                &palette,
+                                Some(Icon::User),
+                                &gettext(locale, "Profile"),
+                            )
+                        {
+                            app.actions.push(Action::Open(Page::UserProfile(user_id)));
+                        }
+                        let private_label = if app.is_private_session() {
+                            gettext(locale, "End private session")
+                        } else {
+                            gettext(locale, "Private session")
+                        };
+                        if super::widgets::menu_item(
+                            ui,
+                            &palette,
+                            Some(Icon::EyeOff),
+                            &private_label,
+                        ) {
+                            app.actions.push(Action::TogglePrivateSession);
+                        }
                         if super::widgets::menu_item(
                             ui,
                             &palette,
@@ -547,6 +623,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     ));
                 }
                 ui.add_space(4.0);
+                // Keep zero gap between adjacent icon buttons so 4 buttons fit cleanly
+                // alongside collapsed badges at minimum window width (12 px glyph gap via button padding).
+                ui.spacing_mut().item_spacing.x = 0.0;
                 if theme::icon_button(
                     ui,
                     Icon::Settings,
@@ -558,6 +637,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .clicked()
                 {
                     app.actions.push(Action::Open(Page::Settings));
+                }
+                let on_whats_new = *app.page() == Page::WhatsNew;
+                let whats_new_btn = theme::icon_button(
+                    ui,
+                    Icon::Bell,
+                    ICON_BUTTON_ICON,
+                    if on_whats_new {
+                        palette.accent
+                    } else {
+                        palette.secondary
+                    },
+                    palette.text,
+                    &gettext(locale, "What's New"),
+                );
+                if app.has_unseen_whats_new() && !on_whats_new {
+                    let dot = egui::pos2(
+                        whats_new_btn.rect.right() - 7.5,
+                        whats_new_btn.rect.top() + 7.5,
+                    );
+                    ui.painter().circle_filled(dot, 4.5, palette.panel);
+                    ui.painter().circle_filled(dot, 3.2, palette.accent);
+                }
+                if whats_new_btn.clicked() {
+                    if on_whats_new && app.can_go_back() {
+                        app.actions.push(Action::Back);
+                    } else {
+                        app.actions.push(Action::Open(Page::WhatsNew));
+                    }
                 }
                 if app.visualizers_available()
                     && theme::icon_button(
@@ -579,6 +686,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.actions.push(Action::ToggleWinampMilkdrop);
                 }
+                ui.spacing_mut().item_spacing.x = ITEM_SPACING;
                 if theme::icon_button(
                     ui,
                     Icon::Shrink,

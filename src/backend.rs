@@ -378,6 +378,10 @@ pub enum ApiRequest {
     Track {
         id: String,
     },
+    /// Expanded user profile (public playlists + recent artists) read over session.
+    UserProfile {
+        id: String,
+    },
     /// One episode, asked for by a link to it: the podcast it belongs to
     /// is the page that opens.
     Episode {
@@ -600,6 +604,10 @@ pub enum ApiResponse {
     Artist {
         id: String,
         result: ApiResult<Artist>,
+    },
+    UserProfile {
+        id: String,
+        result: ApiResult<crate::session_reads::FullUserProfile>,
     },
     ArtistTopTracks {
         id: String,
@@ -4702,6 +4710,20 @@ impl Worker {
                     {
                         result = Ok(tracks);
                     }
+                    if result.as_ref().is_ok_and(Vec::is_empty)
+                        && let Some(station) = crate::util::station_uri(seed)
+                        && let Ok(Ok(tracks)) = tokio::time::timeout(
+                            RADIO_TIMEOUT,
+                            session_reads::station(engine.session(), &station),
+                        )
+                        .await
+                    {
+                        result = Ok(tracks
+                            .into_iter()
+                            .filter(|t| !t.uri.is_empty())
+                            .map(|t| t.uri)
+                            .collect());
+                    }
                 }
                 result
             };
@@ -5281,9 +5303,9 @@ fn operation_for(api: &ApiGateway, request: &ApiRequest) -> Operation {
         }
         ApiRequest::NewReleases { .. } => Operation::UserData,
         ApiRequest::NewReleaseTracks { .. } => Operation::Catalog,
-        ApiRequest::HiddenSongs { .. } | ApiRequest::SetHiddenInPlaylist { .. } => {
-            Operation::UserData
-        }
+        ApiRequest::HiddenSongs { .. }
+        | ApiRequest::SetHiddenInPlaylist { .. }
+        | ApiRequest::UserProfile { .. } => Operation::UserData,
         ApiRequest::SearchCatalogue { .. } => Operation::CatalogSearch,
         ApiRequest::Search { .. } => Operation::PlaylistSearch,
         ApiRequest::PlaySearch { kind, .. } if kind == "playlist" => Operation::PlaylistSearch,
@@ -5578,6 +5600,7 @@ async fn shared_made_for_you(api: &ApiGateway) -> ApiResult<Vec<Playlist>> {
 fn shared_made_for_you_match(playlist: &Playlist, term: &str) -> bool {
     let name = playlist.name.trim();
     let matches_name = name.eq_ignore_ascii_case(term)
+        || (term == "daylist" && name.to_ascii_lowercase().contains("daylist"))
         || (term == "Daily Mix"
             && name.strip_prefix("Daily Mix ").is_some_and(|number| {
                 !number.is_empty() && number.bytes().all(|c| c.is_ascii_digit())
@@ -5707,6 +5730,23 @@ async fn handle(
             Err(error) => Err(error),
         };
         return (ApiResponse::HiddenSongs { generation, result }, Vec::new());
+    }
+    if let ApiRequest::UserProfile { id } = request {
+        let result = match playback_session(api, engine) {
+            Ok(session) => {
+                let _permit = background_session.acquire().await.ok();
+                session_reads::full_user_profile(session, &id)
+                    .await
+                    .map_err(|error| match error {
+                        session_reads::Failure::Definitive(error) => error,
+                        session_reads::Failure::Retry(error) => {
+                            ApiError::Network(format!("{error:#}"))
+                        }
+                    })
+            }
+            Err(error) => Err(error),
+        };
+        return (ApiResponse::UserProfile { id, result }, Vec::new());
     }
     if let ApiRequest::SetHiddenInPlaylist {
         playlist_uri,
@@ -5846,7 +5886,8 @@ async fn handle(
         | ApiRequest::NewReleases { .. }
         | ApiRequest::NewReleaseTracks { .. }
         | ApiRequest::HiddenSongs { .. }
-        | ApiRequest::SetHiddenInPlaylist { .. } => unreachable!("handled before Web API routing"),
+        | ApiRequest::SetHiddenInPlaylist { .. }
+        | ApiRequest::UserProfile { .. } => unreachable!("handled before Web API routing"),
         ApiRequest::MyPlaylists { offset, generation } => ApiResponse::MyPlaylists {
             offset,
             generation,
@@ -6197,8 +6238,19 @@ async fn handle(
             shuffle,
         } => {
             let device = device_id.as_deref();
+            let apply_post_shuffle = !shuffle || play.context_uri.is_some();
             let result = match routed!(set_shuffle(shuffle, device)) {
                 Ok(()) => routed!(play(device, Some(&play))),
+                Err(error) if error.status() == Some(403) => {
+                    // Track radio, autoplay, or explicit URI queues disallow
+                    // toggling shuffle (403 Restriction violated). Start
+                    // playback first and apply shuffle best-effort afterward.
+                    let played = routed!(play(device, Some(&play)));
+                    if played.is_ok() && apply_post_shuffle {
+                        let _ = routed!(set_shuffle(shuffle, device));
+                    }
+                    played
+                }
                 Err(error) => Err(error),
             };
             ApiResponse::Remote {
@@ -6387,7 +6439,8 @@ async fn over_connect(
     })
 }
 
-/// Waits for shuffle to succeed before starting playback, preserving either error.
+/// Waits for shuffle to succeed before starting playback, falling back to
+/// play-first when the current context forbids toggling shuffle (HTTP 403).
 async fn shuffle_then_play<F, Fut>(
     shuffle: serde_json::Value,
     play: serde_json::Value,
@@ -6397,8 +6450,15 @@ where
     F: FnMut(serde_json::Value) -> Fut,
     Fut: std::future::Future<Output = ApiResult<()>>,
 {
-    send(shuffle).await?;
-    send(play).await
+    match send(shuffle.clone()).await {
+        Ok(()) => send(play).await,
+        Err(error) if error.status() == Some(403) => {
+            send(play).await?;
+            let _ = send(shuffle).await;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Whether a session signed in as `username` answers for the Web API's
@@ -10442,6 +10502,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn connect_shuffle_play_starts_playback_when_shuffle_returns_403() {
+        let request = PlayRequest::context("spotify:playlist:abc");
+        let shuffle =
+            crate::sonos::command_body(RemoteAction::Shuffle, None, 0, true, "").unwrap();
+        let play = crate::sonos::command_body(RemoteAction::Play, Some(&request), 0, false, "")
+            .unwrap();
+        let mut sent = Vec::new();
+        let mut shuffle_calls = 0usize;
+        let result = shuffle_then_play(shuffle.clone(), play.clone(), |body| {
+            let is_shuffle = body["command"]["endpoint"] == "set_shuffling_context";
+            sent.push(body);
+            let err = if is_shuffle {
+                shuffle_calls += 1;
+                shuffle_calls == 1
+            } else {
+                false
+            };
+            std::future::ready(if err {
+                Err(ApiError::Status {
+                    status: 403,
+                    message: "Player command failed: Restriction violated.".into(),
+                })
+            } else {
+                Ok(())
+            })
+        })
+        .await;
+        assert!(result.is_ok(), "403 on shuffle must not block playback");
+        assert_eq!(sent, [shuffle.clone(), play, shuffle]);
     }
 
     #[test]
