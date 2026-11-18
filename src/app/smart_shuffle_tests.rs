@@ -287,7 +287,8 @@ fn smart_shuffle_incomplete_playlist_keeps_full_native_context() {
     page.items.total = Some(1_000);
     app.start_play(PlayRequest::context("spotify:playlist:pl1"), false);
     assert!(app.smart_pending.is_none());
-    assert_eq!(app.shuffle_mode(), ShuffleMode::On);
+    // Incomplete contexts play natively without discarding the user's Smart Shuffle toggle.
+    assert_eq!(app.shuffle_mode(), ShuffleMode::Smart);
     let commands = app.backend.take_player_commands();
     let load = commands
         .iter()
