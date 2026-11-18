@@ -592,7 +592,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .default_size(app.settings.sidebar_width)
         .size_range(fit.range.clone())
         .show_separator_line(false)
-        .frame(Frame::new().fill(palette.window).inner_margin(Margin {
+        .frame(Frame::new().fill(palette.page_fill()).inner_margin(Margin {
             left: gap,
             right: 3,
             top: gap,
@@ -621,6 +621,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
     });
+    crate::theme::glass::edge(
+        ui,
+        &palette,
+        response.response.rect,
+        crate::theme::glass::Side::Right,
+    );
     let width = response.response.rect.width();
     if (width - app.settings.sidebar_width).abs() > 1.0
         && super::panel_width_chosen(ui.ctx(), "sidebar", &fit)

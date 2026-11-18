@@ -2767,6 +2767,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "Clair"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "Verre"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "Intensité du verre"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "Quantité de lumière qui traverse le verre. 100 % correspond au design d’origine."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "Suivre le système"

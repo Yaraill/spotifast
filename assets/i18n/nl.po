@@ -2741,6 +2741,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "Licht"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "Glas"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "Glassterkte"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "Hoeveel licht er door het glas schijnt. 100% is zoals ontworpen."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "Systeem volgen"

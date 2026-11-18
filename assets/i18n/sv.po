@@ -2711,6 +2711,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "Ljust"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "Glas"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "Glasstyrka"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "Hur mycket ljus som syns genom glaset. 100 % är som det är designat."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "Följ systemet"

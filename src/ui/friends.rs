@@ -76,6 +76,12 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
     });
     // The Listening activity panel shares the Queue panel's width, so switching
     // between the two never moves the page.
+    crate::theme::glass::edge(
+        ui,
+        &palette,
+        response.response.rect,
+        crate::theme::glass::Side::Left,
+    );
     let width = response.response.rect.width();
     if (width - app.settings.queue_width).abs() > 1.0
         && super::panel_width_chosen(ui.ctx(), "friends-panel", &fit)

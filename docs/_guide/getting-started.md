@@ -127,8 +127,10 @@ You can rename it in Settings.
 
 ## Match your desktop theme
 
-Open **Settings → Appearance → Theme** and choose **Light**, **Dark**, or
-**Follow system**. Follow system matches your desktop's appearance.
+Open **Settings → Appearance → Theme** and choose **Light**, **Dark**,
+**Glass**, or **Follow system**. Follow system matches your desktop's
+appearance. Glass is a dark, frosted theme with soft coloured light behind
+translucent panels.
 
 With Follow system, **Light mode theme** and **Dark mode theme** below it
 pick the theme for each: for example Catppuccin Latte while your computer is

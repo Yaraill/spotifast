@@ -2633,6 +2633,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "淺色"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "玻璃"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "玻璃強度"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "透過玻璃的光有多少。100% 為預設設計。"
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "跟隨系統"

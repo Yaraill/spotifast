@@ -379,12 +379,13 @@ main fields are:
 | `audio_device` | `null` | The output local playback uses, by the id of a device **Audio output** in the device picker lists: PipeWire's or PulseAudio's node name or an ALSA PCM on Linux, the WASAPI endpoint id on Windows, the CoreAudio UID on macOS. `null` is the system default. A device that is not there plays through the default. A name saved by 0.13.3 or earlier opens the output that still has it and is replaced by its id once music plays there; any other name plays through the default and is kept until another choice. The `audio_backend` older versions saved is ignored and no longer written |
 | `audio_cache_mb` | `1024` | On-disk audio cache budget |
 | `local_files_folder` | `null` | Folder, with its subfolders, that a playlist's local files play from |
-| `theme` | `system` | Follow the system appearance by default; explicit `dark` and `light` choices remain available |
+| `theme` | `system` | Follow the system appearance by default; explicit `dark`, `light` and `glass` choices remain available |
 | `language` | `system` | Since 0.10.0: the interface language. `system` follows the operating system's preferred languages and falls back to English; a tag such as `es`, `de-DE`, `pt-BR` or `zh-Hant` selects that language. An unknown tag follows the system |
 | `custom_theme` | `null` | Selected JSON filename from the `themes` folder |
 | `custom_theme_cache` | absent | Last accepted custom palette; preserves appearance if its file is missing or invalid |
 | `system_theme_cache` | absent | Last accepted Omarchy palette for Follow system; retained across restarts |
 | `theme_pair` | absent | The themes Follow system uses in light and dark mode: `{"light": {"filename": "Catppuccin Latte.json", "palette": {...}}, "dark": {...}}`. Each `palette` is the last accepted copy of that file's colours. A missing side, or the whole field, is Spotifast's own Light or Dark; it is written only once you choose one |
+| `glass_strength` | `100` | How strong the Glass theme is, in percent (25 to 200); the light behind it follows fully, the panels and rows by half |
 | `accent_from_art` | `true` | Tint pages with album art, and colour the player bar visualizer with the cover's colours |
 | `player_bar_vis` | `off` | Since 0.11.0: what moves behind the player bar while a song plays on this computer: `off`, `spectrum` or `waveform` |
 | `player_bar_vis_click` | `true` | Allow clicks on empty player bar space to cycle visualizer modes |
@@ -586,9 +587,20 @@ the light/dark appearance comes from the desktop portal's `color-scheme`
 setting (GNOME, KDE and Flatpak), and since 0.10.0, the app follows
 it when it changes. Saved Dark,
 Light and custom choices are preserved when updating. The picker starts with
-**Follow system**, **Light**, and **Dark**, then a separator. **Omarchy** comes
-next when the integration is available, followed by the other local palettes.
-Themes change colors and keep the app's existing fonts.
+**Follow system**, **Light**, **Dark** and **Glass**, then a separator.
+**Omarchy** comes next when the integration is available, followed by the
+other local palettes. Themes change colors and keep the app's existing fonts.
+
+**Glass** is a dark, frosted theme. The window shows soft pools of coral,
+violet and blue light; the page, the sidebar, the right-hand panels and the
+player bar are translucent sheets over them, edged with hairlines, and rows,
+buttons and fields are lit glass. With **Colour from album art** on, the
+brightest pool takes the playing cover's colour and eases to the next
+cover's as songs change. Menus and dialogs stay nearly solid so their text
+stays readable. Glass is built in rather than a palette file: a palette
+file only sets colours, and Glass also changes how the window is painted.
+While Glass is chosen, **Glass strength** below the theme sets how much
+light shows through, from 25% to 200%. 100% is as designed.
 
 While **Follow system** is selected, two more pickers appear below the Theme
 row: **Light mode theme** and **Dark mode theme**. Each starts with

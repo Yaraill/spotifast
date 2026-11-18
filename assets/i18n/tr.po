@@ -2739,6 +2739,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "Açık"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "Cam"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "Cam yoğunluğu"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "Camın içinden ne kadar ışık görüneceği. %100 tasarlandığı gibidir."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "Sistemi takip et"

@@ -51,13 +51,14 @@ struct Cli {
 
     /// Extra demo surfaces: a comma-separated list of `queue`, `playing-next`,
     /// `devices`, `sonos-idle`, `sonos-active`, `cast-idle`, `cast-connecting`, `phone-playing`,
-    /// `shortcuts`, `create`, `light`, `system-light`, `system-dark`, `focus`, `update`, `personal-app`,
+    /// `shortcuts`, `create`, `light`, `glass`, `system-light`, `system-dark`, `focus`, `update`, `personal-app`,
     /// `windows-taskbar`, `start-in-tray`, `german`, `lyrics`, `lyrics-fullscreen`, `collection-loading`,
     /// `shuffle-selected`, `shuffle-started`, `undated-mix`, `signed-out`, `connecting`, `library-list`,
     /// `library-list-narrow`, `library-list-wide`, `library-grid`, `library-grid-narrow`,
     /// `library-grid-wide`, `waiting-for-browser`, `sign-in-returning`, `sign-in-malformed`,
     /// `sign-in-shared-retired`, `sign-in-unknown-client`, `sign-in-not-allowed`,
-    /// `shared-grant`, or `own-app`. `wmp-skin=PATH` wears a Windows Media
+    /// `shared-grant`, or `own-app`. `settings-theme` filters Settings to Appearance. `glass-strength=PERCENT`
+    /// sets Glass's strength. `wmp-skin=PATH` wears a Windows Media
     /// Player skin, and `wmp-run=SCRIPT` runs script in it once it starts
     /// (`|` for a comma), to open a drawer or view for a capture.
     #[cfg(feature = "demo")]

@@ -59,8 +59,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         (false, true) => theme::tint_curve(pct, 0.24, 0.44, 0.48),
         (false, false) => theme::tint_curve(pct, 0.16, 0.26, 0.30),
     };
-    let fill = eased_fill_with_strength(ui.ctx(), palette.panel, tint, tint_strength);
-    let frame_fill = if classic { fill } else { palette.window };
+    let fill = if palette.glass {
+        theme::ease_color(
+            ui.ctx(),
+            egui::Id::new("player-bar-tint"),
+            crate::theme::glass::tinted_chrome(palette.glass_strength, tint),
+            TINT_FADE_SECONDS,
+        )
+    } else {
+        eased_fill_with_strength(ui.ctx(), palette.panel, tint, tint_strength)
+    };
+    let frame_fill = if classic { fill } else { palette.page_fill() };
     egui::Panel::bottom("player-bar")
         .exact_size(theme::PLAYER_BAR_HEIGHT)
         .resizable(false)

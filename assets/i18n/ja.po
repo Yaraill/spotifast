@@ -2725,6 +2725,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "ライト"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "ガラス"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "ガラスの強さ"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "ガラス越しに見える光の量です。100% が標準のデザインです。"
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "システムに合わせる"

@@ -1406,6 +1406,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 "Swipe horizontally with two fingers on a touchpad to go back or forward.",
             ),
         ),
+        RowText::new(
+            gettext(locale, "Glass strength"),
+            gettext(
+                locale,
+                "How much light shows through the glass. 100% is as designed.",
+            ),
+        )
+        .when(app.settings.custom_theme.is_none() && app.settings.theme == ThemeChoice::Glass),
     ];
     for index in [8, 9, 10] {
         appearance_rows[index].available &= visualizers;
@@ -1435,6 +1443,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         let response = egui::ComboBox::from_id_salt("appearance_theme")
                             .selected_text(selected.as_ref())
                             .width(200.0_f32.min(ui.available_width()))
+                            .height(280.0)
                             .show_ui(ui, |ui| {
                                 for choice in ThemeChoice::ALL {
                                     if ui
@@ -1509,6 +1518,27 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             buttons(ui);
                         }
                     });
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[16],
+                |ui| {
+                    if setting_slider(
+                        ui,
+                        &palette,
+                        &mut app.settings.glass_strength,
+                        theme::glass::MIN_PERCENT..=theme::glass::MAX_PERCENT,
+                        |slider| slider.step_by(5.0),
+                        |value| value.suffix("%"),
+                    )
+                    .changed()
+                    {
+                        changed = true;
+                    }
                 },
             );
             for (row, base) in [

@@ -113,6 +113,12 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
             contents(app, ui);
         });
     });
+    crate::theme::glass::edge(
+        ui,
+        &palette,
+        response.response.rect,
+        crate::theme::glass::Side::Left,
+    );
     let current_width = response.response.rect.width();
     if (app.settings.lyrics_width - current_width).abs() > 1.0
         && super::panel_width_chosen(ui.ctx(), "lyrics-panel", &fit)

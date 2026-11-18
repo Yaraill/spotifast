@@ -1742,9 +1742,24 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.settings.theme = crate::settings::ThemeChoice::Dark;
                 app.actions.push(Action::SettingsChanged);
             }
+            "glass" => {
+                app.settings.theme = crate::settings::ThemeChoice::Glass;
+                app.actions.push(Action::SettingsChanged);
+            }
+            // Glass at a strength in percent, for shots of the range.
+            surface if surface.starts_with("glass-strength=") => {
+                if let Ok(percent) = surface["glass-strength=".len()..].parse() {
+                    app.settings.glass_strength = percent;
+                    app.actions.push(Action::SettingsChanged);
+                }
+            }
             // Settings filtered down to the skin cards.
             "settings-skins" => {
                 app.winamp.demo_settings_filter = Some("Mini player".into());
+            }
+            // Settings filtered down to its Appearance section.
+            "settings-theme" => {
+                app.winamp.demo_settings_filter = Some("Appearance".into());
             }
             "settings-player-skins" => {
                 app.winamp.demo_settings_filter = Some("Windows Media Player".into());

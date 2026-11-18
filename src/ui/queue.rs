@@ -131,6 +131,12 @@ pub fn side_panel(app: &mut App, ui: &mut egui::Ui) {
             );
         });
     });
+    crate::theme::glass::edge(
+        ui,
+        &palette,
+        response.response.rect,
+        crate::theme::glass::Side::Left,
+    );
     let width = response.response.rect.width();
     // Adopt the drawn width only from the person's own drag. The panel
     // also draws clamped copies of widths chosen elsewhere (the

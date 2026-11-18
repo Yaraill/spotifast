@@ -97,6 +97,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ),
         );
     }
+    // Under every panel, so the glass sheets have light to frost.
+    theme::glass::backdrop(ui, &app.palette, app.now_playing_tint());
     player_bar::show(app, ui);
     if app.lyrics_fullscreen.is_some() {
         lyrics::fullscreen(app, ui);
@@ -334,7 +336,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
         bottom: half_gap,
     };
     egui::CentralPanel::default()
-        .frame(Frame::new().fill(palette.window).inner_margin(margin))
+        .frame(Frame::new().fill(palette.page_fill()).inner_margin(margin))
         .show(ui, |ui| {
             let rect = ui.max_rect();
             theme::paint_floating_panel(ui, &palette, rect);
@@ -362,20 +364,25 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                 } else {
                     100
                 };
+                let bottom = if palette.glass {
+                    Color32::TRANSPARENT
+                } else {
+                    palette.panel
+                };
                 let target_top = header_wash(&palette, overview, intensity, tint)
                     .map(|(top, _)| top)
-                    .unwrap_or(palette.panel);
+                    .unwrap_or(bottom);
                 let top = theme::ease_color(
                     ui.ctx(),
                     Id::new(("central-header-wash", &page_key, palette.dark)),
                     target_top,
                     theme::ART_EASE_SECONDS,
                 );
-                if top != palette.panel {
+                if top != bottom {
                     let wash_rect =
                         header_rect(rect.shrink(1.0), scrolled).intersect(rect.shrink(1.0));
                     if wash_rect.height() > 0.0 {
-                        widgets::paint_vertical_gradient(ui, wash_rect, top, palette.panel);
+                        widgets::paint_vertical_gradient(ui, wash_rect, top, bottom);
                     }
                 }
             }
@@ -600,7 +607,8 @@ fn banner(
 /// The gradient behind a page's header, top to bottom: the art's colour
 /// blended cleanly into the panel surface, stronger on a cover's own page than on an
 /// overview, or else the palette's `tint` fading out, whose alpha is its
-/// strength. `None` leaves the plain panel.
+/// strength. `None` leaves the plain panel; over glass the art's colour is light
+/// laid on the sheet so the backdrop still shows through it.
 fn header_wash(
     palette: &theme::Palette,
     overview: bool,
@@ -608,15 +616,16 @@ fn header_wash(
     art: Option<Color32>,
 ) -> Option<(Color32, Color32)> {
     if let Some(art) = art {
+        if intensity == 0 {
+            return None;
+        }
+        if palette.glass {
+            return Some(theme::glass::header_wash(art, overview));
+        }
         let strength = if overview {
             theme::tint_curve(intensity, 0.42, 0.72, 0.80)
         } else {
-            // Cover pages always carry a readable hero wash whenever art tinting is enabled.
-            if intensity == 0 {
-                0.0
-            } else {
-                theme::tint_curve(intensity, 0.66, 0.86, 0.90)
-            }
+            theme::tint_curve(intensity, 0.66, 0.86, 0.90)
         };
         return (strength > 0.0)
             .then_some((blend(palette.panel, art, strength), palette.panel));
@@ -757,7 +766,7 @@ fn caption_buttons(ui: &mut egui::Ui, palette: &theme::Palette, locale: crate::i
 /// Shared outer margin frame for docked right-hand side panels.
 pub(super) fn floating_right_panel_frame(palette: &theme::Palette) -> Frame {
     let gap = theme::FLOATING_GAP as i8;
-    Frame::new().fill(palette.window).inner_margin(Margin {
+    Frame::new().fill(palette.page_fill()).inner_margin(Margin {
         left: 3,
         right: gap,
         top: gap,
@@ -940,6 +949,14 @@ mod tests {
             page,
             "art wins over the wash"
         );
+
+        // Over glass the art is light on the sheet, never a solid band that
+        // would hide the backdrop.
+        let glass = theme::Palette::glass();
+        assert_eq!(header_wash(&glass, false, 40, None), None);
+        let (top, bottom) = header_wash(&glass, false, 40, Some(art)).unwrap();
+        assert!(!top.is_opaque() && top.a() > 0);
+        assert_eq!(bottom, Color32::TRANSPARENT);
     }
 
     /// The wash sits at the top of an unscrolled page and leaves with the

@@ -48,6 +48,8 @@ pub enum ThemeChoice {
     System,
     #[serde(rename = "spotifast_modern", alias = "modern")]
     SpotifastModern,
+    /// Spotifast's frosted dark theme ([`crate::theme::Palette::glass`]).
+    Glass,
 }
 
 /// How the tray icon is drawn on Linux and Windows: in colour, or white or
@@ -457,11 +459,12 @@ impl<'de> Deserialize<'de> for LanguageChoice {
 }
 
 impl ThemeChoice {
-    pub const ALL: [ThemeChoice; 4] = [
+    pub const ALL: [ThemeChoice; 5] = [
         Self::System,
         Self::Light,
         Self::Dark,
         Self::SpotifastModern,
+        Self::Glass,
     ];
 
     pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
@@ -471,6 +474,7 @@ impl ThemeChoice {
             Self::Light => pgettext(locale, "theme", "Light"),
             Self::System => gettext(locale, "Follow system"),
             Self::SpotifastModern => "Spotifast Modern".into(),
+            Self::Glass => pgettext(locale, "theme", "Glass"),
         }
     }
 }
@@ -618,6 +622,9 @@ pub struct Settings {
     pub tint_intensity: TintIntensity,
     /// Visual shape of the bottom player bar.
     pub player_bar_style: PlayerBarStyle,
+    /// How strong the Glass theme's glass is, in percent of its design.
+    #[serde(default = "default_glass_strength")]
+    pub glass_strength: u8,
     /// A spectrum or waveform of the playing song behind the player bar.
     pub player_bar_vis: PlayerBarVis,
     /// Allow clicks on the player bar background to cycle visualizer modes.
@@ -830,6 +837,7 @@ impl Default for Settings {
             accent_from_art: true,
             tint_intensity: TintIntensity::default(),
             player_bar_style: PlayerBarStyle::default(),
+            glass_strength: default_glass_strength(),
             player_bar_vis: PlayerBarVis::Off,
             player_bar_vis_click: true,
             visualizer_fps: crate::milkdrop::DEFAULT_FPS,
@@ -907,6 +915,10 @@ impl Default for Settings {
             proxy_password_legacy: false,
         }
     }
+}
+
+fn default_glass_strength() -> u8 {
+    crate::theme::glass::DEFAULT_PERCENT
 }
 
 fn default_buffer_ms() -> u32 {
@@ -1036,6 +1048,10 @@ impl Settings {
                 settings.forget_unusable_screen_rate();
                 settings.proxy_password_legacy = !settings.proxy_password.is_empty();
                 settings.crossfade_secs = settings.crossfade_secs.min(12);
+                settings.glass_strength = settings.glass_strength.clamp(
+                    crate::theme::glass::MIN_PERCENT,
+                    crate::theme::glass::MAX_PERCENT,
+                );
                 settings
             }
             Err(_) => Self::default(),
@@ -1374,6 +1390,7 @@ mod tests {
             ("dark", ThemeChoice::Dark),
             ("light", ThemeChoice::Light),
             ("spotifast_modern", ThemeChoice::SpotifastModern),
+            ("glass", ThemeChoice::Glass),
         ] {
             let settings: Settings =
                 serde_json::from_value(serde_json::json!({"theme": json, "volume": 37})).unwrap();

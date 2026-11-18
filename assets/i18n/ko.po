@@ -2689,6 +2689,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "라이트"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "유리"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "유리 강도"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "유리를 통해 비치는 빛의 양입니다. 100%가 기본 디자인입니다."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "시스템 설정 따르기"

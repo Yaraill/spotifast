@@ -2755,6 +2755,19 @@ msgctxt "theme"
 msgid "Light"
 msgstr "Світла"
 
+#: src/settings.rs:178
+msgctxt "theme"
+msgid "Glass"
+msgstr "Скло"
+
+#: src/ui/settings.rs:1381
+msgid "Glass strength"
+msgstr "Інтенсивність скла"
+
+#: src/ui/settings.rs:1384
+msgid "How much light shows through the glass. 100% is as designed."
+msgstr "Скільки світла проходить крізь скло. 100% — початковий дизайн."
+
 #: src/settings.rs:174
 msgid "Follow system"
 msgstr "Як у системі"
